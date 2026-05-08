@@ -6,17 +6,17 @@ import { getICEServers } from '../services/turn';
 
 export const callRoutes = new Elysia({ prefix: '/calls' })
   .use(authGuard)
-  .get('/history', async ({ user }) => {
+  .get('/history', async ({ authUser }) => {
     const history = await db
       .select()
       .from(schema.calls)
-      .where(or(eq(schema.calls.callerId, user.userId), eq(schema.calls.calleeId, user.userId)))
+      .where(or(eq(schema.calls.callerId, authUser.userId), eq(schema.calls.calleeId, authUser.userId)))
       .orderBy(desc(schema.calls.createdAt))
       .limit(50);
 
     return history;
   })
-  .get('/ice-servers', async ({ user }) => {
-    const iceServers = await getICEServers(user?.userId);
+  .get('/ice-servers', async ({ authUser }) => {
+    const iceServers = await getICEServers(authUser.userId);
     return { iceServers };
   });

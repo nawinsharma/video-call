@@ -6,7 +6,7 @@ import { connectionManager } from '../websocket/connections';
 
 export const userRoutes = new Elysia({ prefix: '/users' })
   .use(authGuard)
-  .get('/', async ({ user }) => {
+  .get('/', async ({ authUser }) => {
     const allUsers = await db
       .select({
         id: schema.users.id,
@@ -17,7 +17,7 @@ export const userRoutes = new Elysia({ prefix: '/users' })
         lastSeen: schema.users.lastSeen,
       })
       .from(schema.users)
-      .where(ne(schema.users.id, user.userId));
+      .where(ne(schema.users.id, authUser.userId));
 
     return allUsers.map((u) => ({
       ...u,
@@ -26,7 +26,7 @@ export const userRoutes = new Elysia({ prefix: '/users' })
   })
   .get(
     '/search',
-    async ({ query, user }) => {
+    async ({ query, authUser }) => {
       const { q } = query;
       if (!q || q.length < 2) return [];
 
@@ -41,25 +41,25 @@ export const userRoutes = new Elysia({ prefix: '/users' })
         .where(ilike(schema.users.username, `%${q}%`))
         .limit(20);
 
-      return results.filter((u) => u.id !== user.userId);
+      return results.filter((u) => u.id !== authUser.userId);
     },
     { query: t.Object({ q: t.Optional(t.String()) }) }
   )
   .put(
     '/push-token',
-    async ({ body, user }) => {
+    async ({ body, authUser }) => {
       await db
         .update(schema.users)
         .set({ pushToken: body.token })
-        .where(eq(schema.users.id, user.userId));
+        .where(eq(schema.users.id, authUser.userId));
 
       return { success: true };
     },
     { body: t.Object({ token: t.String() }) }
   )
-  .get('/me', async ({ user }) => {
+  .get('/me', async ({ authUser }) => {
     const me = await db.query.users.findFirst({
-      where: eq(schema.users.id, user.userId),
+      where: eq(schema.users.id, authUser.userId),
     });
 
     if (!me) return { error: 'User not found' };
