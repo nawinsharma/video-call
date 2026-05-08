@@ -16,6 +16,7 @@ export const callRoutes = new Elysia({ prefix: '/calls' })
 
     return history;
   })
-  .get('/ice-servers', ({ user }) => {
-    return { iceServers: getICEServers(user?.userId) };
+  .get('/ice-servers', async ({ user }) => {
+    const iceServers = await getICEServers(user?.userId);
+    return { iceServers };
   });

@@ -96,7 +96,7 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
 
         activeCalls.set(call.id, { callerId: userId, calleeId, callType });
 
-        const iceServers = getICEServers(userId);
+        const iceServers = await getICEServers(userId);
 
         // Notify callee via WebSocket
         const sent = connectionManager.sendTo(calleeId, {
@@ -145,7 +145,7 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
           .set({ status: 'active', startedAt: new Date() })
           .where(eq(schema.calls.id, callId));
 
-        const iceServers = getICEServers(userId);
+        const iceServers = await getICEServers(userId);
 
         connectionManager.sendTo(call.callerId, {
           type: 'call:accepted',

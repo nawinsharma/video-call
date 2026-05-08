@@ -1,4 +1,5 @@
 import { createHmac } from 'crypto';
+import axios from 'axios';
 
 interface TURNCredentials {
   urls: string[];
@@ -6,7 +7,17 @@ interface TURNCredentials {
   credential: string;
 }
 
-export function generateTURNCredentials(userId: string): TURNCredentials {
+interface ICEServer {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+}
+
+interface TwilioNtsTokenResponse {
+  ice_servers: ICEServer[];
+}
+
+function generateTURNCredentials(userId: string): TURNCredentials {
   const turnSecret = process.env.TURN_SECRET || 'turn-secret-key';
   const turnServer = process.env.TURN_SERVER || 'turn:turn.example.com:3478';
   const turnTlsServer = process.env.TURN_TLS_SERVER || 'turns:turn.example.com:5349';
@@ -25,7 +36,7 @@ export function generateTURNCredentials(userId: string): TURNCredentials {
   };
 }
 
-export function getICEServers(userId: string) {
+function getSelfHostedICEServers(userId: string): ICEServer[] {
   const turnCredentials = generateTURNCredentials(userId);
 
   return [
@@ -36,4 +47,46 @@ export function getICEServers(userId: string) {
       credential: turnCredentials.credential,
     },
   ];
+}
+
+async function getTwilioICEServers(): Promise<ICEServer[] | null> {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const ttl = Number(process.env.TWILIO_NTS_TTL || '86400');
+
+  if (!accountSid || !authToken) {
+    return null;
+  }
+
+  const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Tokens.json`;
+
+  try {
+    const response = await axios.post<TwilioNtsTokenResponse>(
+      endpoint,
+      new URLSearchParams({ Ttl: String(ttl) }).toString(),
+      {
+        auth: { username: accountSid, password: authToken },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        timeout: 10000,
+      },
+    );
+
+    if (Array.isArray(response.data.ice_servers) && response.data.ice_servers.length > 0) {
+      return response.data.ice_servers;
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown error';
+    console.error(`[TURN] Failed to fetch Twilio NTS token, falling back to self-hosted TURN: ${message}`);
+  }
+
+  return null;
+}
+
+export async function getICEServers(userId: string): Promise<ICEServer[]> {
+  const twilioIceServers = await getTwilioICEServers();
+  if (twilioIceServers) {
+    return twilioIceServers;
+  }
+
+  return getSelfHostedICEServers(userId);
 }
