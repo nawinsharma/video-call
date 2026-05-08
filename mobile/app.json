@@ -17,7 +17,11 @@
       "infoPlist": {
         "NSCameraUsageDescription": "This app needs camera access for video calls",
         "NSMicrophoneUsageDescription": "This app needs microphone access for audio/video calls",
-        "UIBackgroundModes": ["voip", "audio", "fetch"]
+        "UIBackgroundModes": [
+          "voip",
+          "audio",
+          "fetch"
+        ]
       }
     },
     "android": {
@@ -40,9 +44,17 @@
       [
         "expo-notifications",
         {
-          "sounds": ["./assets/sounds/ringtone.wav"]
+          "sounds": [
+            "./assets/sounds/ringtone.wav"
+          ]
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "56b73680-6738-4983-9c7b-63917385dc64"
+      }
+    }
   }
 }
