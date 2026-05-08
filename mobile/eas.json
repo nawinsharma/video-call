@@ -1,0 +1,30 @@
+{
+  "cli": {
+    "version": ">= 12.0.0"
+  },
+  "build": {
+    "preview": {
+      "developmentClient": false,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://video-call-server.nawin.xyz",
+        "EXPO_PUBLIC_WS_URL": "wss://video-call-server.nawin.xyz/ws/signaling"
+      }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://video-call-server.nawin.xyz",
+        "EXPO_PUBLIC_WS_URL": "wss://video-call-server.nawin.xyz/ws/signaling"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
