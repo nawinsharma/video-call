@@ -60,8 +60,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "56b73680-6738-4983-9c7b-63917385dc64"
+        "projectId": "9befe155-9f7f-452e-917d-a7334864dd25"
       }
-    }
+    },
+    "owner": "nawin337"
   }
 }
