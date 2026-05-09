@@ -13,6 +13,15 @@ class SignalingClient {
   private isIntentionalClose = false;
 
   connect(userId: string, username: string) {
+    if (
+      this.userId === userId &&
+      this.username === username &&
+      this.ws &&
+      (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
+    ) {
+      return;
+    }
+
     this.userId = userId;
     this.username = username;
     this.isIntentionalClose = false;
@@ -21,6 +30,10 @@ class SignalingClient {
 
   private createConnection() {
     if (!this.userId || !this.username) return;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return;
     }
@@ -88,6 +101,38 @@ class SignalingClient {
 
     this.ws.send(JSON.stringify({ type, payload }));
     return true;
+  }
+
+  waitUntilConnected(timeoutMs = 7000): Promise<boolean> {
+    if (this.isConnected) return Promise.resolve(true);
+    if (!this.userId || !this.username) return Promise.resolve(false);
+
+    this.createConnection();
+
+    return new Promise((resolve) => {
+      let settled = false;
+      let timeout: ReturnType<typeof setTimeout>;
+      let offOpen = () => {};
+      let offFailed = () => {};
+      let offClose = () => {};
+
+      const finish = (connected: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        offOpen();
+        offFailed();
+        offClose();
+        resolve(connected);
+      };
+
+      timeout = setTimeout(() => finish(this.isConnected), timeoutMs);
+      offOpen = this.on('connection:open', () => finish(true));
+      offFailed = this.on('connection:failed', () => finish(false));
+      offClose = this.on('connection:close', () => {
+        if (this.isIntentionalClose) finish(false);
+      });
+    });
   }
 
   on(event: string, handler: MessageHandler) {

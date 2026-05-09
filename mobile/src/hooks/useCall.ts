@@ -5,11 +5,13 @@ import { webrtcManager } from '../services/webrtc/webrtcManager';
 import { callsService } from '../services/calls/callsService';
 import { WS_EVENTS, CALL_TIMEOUT_MS } from '../constants';
 import * as Haptics from 'expo-haptics';
+import { Alert } from 'react-native';
 import { MediaStream } from 'react-native-webrtc';
 import type { ICEServer, RTCIceCandidateType } from '../types';
 
 let callTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
 let durationInterval: ReturnType<typeof setInterval> | null = null;
+let connectionFailureTimer: ReturnType<typeof setTimeout> | null = null;
 
 function clearCallTimeout() {
   if (callTimeoutTimer) {
@@ -34,10 +36,23 @@ function stopDurationTimer() {
   }
 }
 
+function clearConnectionFailureTimer() {
+  if (connectionFailureTimer) {
+    clearTimeout(connectionFailureTimer);
+    connectionFailureTimer = null;
+  }
+}
+
 function cleanupCallState() {
   clearCallTimeout();
+  clearConnectionFailureTimer();
   stopDurationTimer();
   webrtcManager.cleanup();
+}
+
+function sendCallEnded(callId: string | null) {
+  if (!callId || callId.startsWith('temp_')) return;
+  signalingClient.send('call:end', { callId });
 }
 
 export function useCallEvents() {
@@ -51,6 +66,7 @@ export function useCallEvents() {
           iceServers?: Array<{ urls: string[]; username?: string; credential?: string }>;
         };
 
+        if (useCallStore.getState().status !== 'outgoing') return;
         useCallStore.getState().updateSession({ callId, iceServers });
         webrtcManager.setCallId(callId);
       })
@@ -73,12 +89,13 @@ export function useCallEvents() {
 
     unsubs.push(
       signalingClient.on(WS_EVENTS.CALL_ACCEPTED, async (msg) => {
-        const { answer, iceServers } = msg.payload as {
+        const { callId, answer, iceServers } = msg.payload as {
           callId: string;
           answer: { type: 'offer' | 'answer'; sdp: string };
           iceServers?: Array<{ urls: string[]; username?: string; credential?: string }>;
         };
 
+        if (useCallStore.getState().callId !== callId) return;
         clearCallTimeout();
         useCallStore.getState().setStatus('active');
         if (iceServers) useCallStore.getState().setIceServers(iceServers);
@@ -89,7 +106,10 @@ export function useCallEvents() {
     );
 
     unsubs.push(
-      signalingClient.on(WS_EVENTS.CALL_REJECTED, () => {
+      signalingClient.on(WS_EVENTS.CALL_REJECTED, (msg) => {
+        const { callId } = msg.payload as { callId?: string };
+        if (callId && useCallStore.getState().callId !== callId) return;
+
         clearCallTimeout();
         useCallStore.getState().endCall();
         cleanupCallState();
@@ -98,7 +118,10 @@ export function useCallEvents() {
     );
 
     unsubs.push(
-      signalingClient.on(WS_EVENTS.CALL_ENDED, () => {
+      signalingClient.on(WS_EVENTS.CALL_ENDED, (msg) => {
+        const { callId } = msg.payload as { callId?: string };
+        if (callId && useCallStore.getState().callId !== callId) return;
+
         useCallStore.getState().endCall();
         cleanupCallState();
       })
@@ -106,7 +129,8 @@ export function useCallEvents() {
 
     unsubs.push(
       signalingClient.on(WS_EVENTS.WEBRTC_ICE_CANDIDATE, (msg) => {
-        const payload = msg.payload as { candidate: RTCIceCandidateType };
+        const payload = msg.payload as { callId?: string; candidate: RTCIceCandidateType };
+        if (payload.callId && useCallStore.getState().callId !== payload.callId) return;
         void webrtcManager.addIceCandidate(payload.candidate);
       })
     );
@@ -129,15 +153,34 @@ export function useCall() {
       onLocalStream: (stream) => setLocalStream(stream),
       onConnectionStateChange: (state) => {
         if (state === 'connected') {
+          clearConnectionFailureTimer();
           useCallStore.getState().setStatus('active');
           startDurationTimer();
         }
-        if (state === 'disconnected') useCallStore.getState().setStatus('reconnecting');
+        if (state === 'disconnected') {
+          const { status } = useCallStore.getState();
+          if (status === 'active' && webrtcManager.hasRemoteDescription()) {
+            useCallStore.getState().setStatus('reconnecting');
+          }
+        }
         if (state === 'failed') {
-          useCallStore.getState().endCall();
-          cleanupCallState();
-          setLocalStream(null);
-          setRemoteStream(null);
+          const { status } = useCallStore.getState();
+          // RN WebRTC can report `failed` before the callee has answered or before remote SDP lands.
+          if (status === 'outgoing' || status === 'connecting' || !webrtcManager.hasRemoteDescription()) {
+            console.warn('[WebRTC] Ignoring failed before call is established');
+            return;
+          }
+          if (connectionFailureTimer) return;
+
+          useCallStore.getState().setStatus('reconnecting');
+          connectionFailureTimer = setTimeout(() => {
+            const { callId } = useCallStore.getState();
+            sendCallEnded(callId);
+            useCallStore.getState().endCall();
+            cleanupCallState();
+            setLocalStream(null);
+            setRemoteStream(null);
+          }, 10000);
         }
       },
     });
@@ -160,7 +203,15 @@ export function useCall() {
     try {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      const iceServers = await fetchIceServers(callStore.iceServers);
+      const signalingReady = await signalingClient.waitUntilConnected();
+      if (!signalingReady) {
+        throw new Error('Signaling connection unavailable. Please wait a moment and try again.');
+      }
+
+      clearCallTimeout();
+      cleanupCallState();
+
+      const iceServers = await fetchIceServers(useCallStore.getState().iceServers);
       await webrtcManager.initialize(iceServers);
       await webrtcManager.startLocalStream(callType === 'video');
 
@@ -175,14 +226,14 @@ export function useCall() {
         offer: { type: offer.type, sdp: offer.sdp },
       });
       if (!sent) {
-        throw new Error('Signaling connection unavailable');
+        throw new Error('Signaling connection unavailable. Please wait a moment and try again.');
       }
 
       // Set timeout for unanswered call
       callTimeoutTimer = setTimeout(() => {
         if (useCallStore.getState().status !== 'outgoing') return;
 
-        signalingClient.send('call:end', { callId: useCallStore.getState().callId });
+        sendCallEnded(useCallStore.getState().callId);
         useCallStore.getState().endCall();
         cleanupCallState();
         setLocalStream(null);
@@ -190,6 +241,10 @@ export function useCall() {
       }, CALL_TIMEOUT_MS);
     } catch (error) {
       console.error('[Call] Failed to initiate:', error);
+      Alert.alert(
+        'Call failed',
+        error instanceof Error ? error.message : 'Could not start the call. Please try again.'
+      );
       callStore.reset();
       cleanupCallState();
       setLocalStream(null);
@@ -198,11 +253,18 @@ export function useCall() {
   }, [callStore, fetchIceServers]);
 
   const acceptCall = useCallback(async () => {
+    const incomingCallId = useCallStore.getState().callId;
+
     try {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       callStore.setStatus('connecting');
 
-      const iceServers = await fetchIceServers(callStore.iceServers);
+      const signalingReady = await signalingClient.waitUntilConnected();
+      if (!signalingReady) {
+        throw new Error('Signaling connection unavailable');
+      }
+
+      const iceServers = await fetchIceServers(useCallStore.getState().iceServers);
       await webrtcManager.initialize(iceServers);
       await webrtcManager.startLocalStream(callStore.callType === 'video');
 
@@ -224,6 +286,9 @@ export function useCall() {
       startDurationTimer();
     } catch (error) {
       console.error('[Call] Failed to accept:', error);
+      if (incomingCallId) {
+        signalingClient.send('call:reject', { callId: incomingCallId });
+      }
       callStore.reset();
       cleanupCallState();
       setLocalStream(null);
@@ -233,7 +298,7 @@ export function useCall() {
 
   const rejectCall = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    signalingClient.send('call:reject', { callId: callStore.callId });
+    if (callStore.callId) signalingClient.send('call:reject', { callId: callStore.callId });
     callStore.reset();
     cleanupCallState();
     setLocalStream(null);
@@ -244,7 +309,7 @@ export function useCall() {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     clearCallTimeout();
     stopDurationTimer();
-    signalingClient.send('call:end', { callId: callStore.callId });
+    sendCallEnded(callStore.callId);
     callStore.endCall();
     cleanupCallState();
     setLocalStream(null);

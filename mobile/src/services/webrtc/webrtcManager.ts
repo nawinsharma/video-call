@@ -32,6 +32,12 @@ class WebRTCManager {
   private localStream: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
   private pendingCandidates: RTCIceCandidate[] = [];
+  /** Trickled ICE from caller before server assigns real call id (temp_* is not in activeCalls). */
+  private pendingLocalIceCandidates: Array<{
+    candidate: string;
+    sdpMLineIndex: number | null;
+    sdpMid: string | null;
+  }> = [];
   private callId: string | null = null;
 
   private onRemoteStream: ((stream: MediaStream) => void) | null = null;
@@ -49,6 +55,16 @@ class WebRTCManager {
   }
 
   async initialize(iceServers?: ICEServer[]) {
+    if (this.peerConnection) {
+      try {
+        this.peerConnection.close();
+      } catch {
+        /* ignore */
+      }
+      this.peerConnection = null;
+    }
+    this.pendingLocalIceCandidates = [];
+
     const config = {
       iceServers: iceServers || DEFAULT_ICE_SERVERS,
       iceCandidatePoolSize: 10,
@@ -59,16 +75,23 @@ class WebRTCManager {
     const peerConnectionWithHandlers = this.peerConnection as RTCPeerConnection & PeerConnectionEventHandlers;
 
     peerConnectionWithHandlers.onicecandidate = (event: IceCandidateEvent) => {
-      if (event.candidate && this.callId) {
-        signalingClient.send('webrtc:ice-candidate', {
-          callId: this.callId,
-          candidate: {
-            candidate: event.candidate.candidate,
-            sdpMLineIndex: event.candidate.sdpMLineIndex,
-            sdpMid: event.candidate.sdpMid,
-          },
-        });
+      if (!event.candidate || !this.callId) return;
+
+      const candidatePayload = {
+        candidate: event.candidate.candidate,
+        sdpMLineIndex: event.candidate.sdpMLineIndex,
+        sdpMid: event.candidate.sdpMid,
+      };
+
+      if (this.callId.startsWith('temp_')) {
+        this.pendingLocalIceCandidates.push(candidatePayload);
+        return;
       }
+
+      signalingClient.send('webrtc:ice-candidate', {
+        callId: this.callId,
+        candidate: candidatePayload,
+      });
     };
 
     peerConnectionWithHandlers.ontrack = (event: TrackEvent) => {
@@ -148,7 +171,22 @@ class WebRTCManager {
   }
 
   setCallId(callId: string) {
+    const prev = this.callId;
     this.callId = callId;
+
+    if (prev?.startsWith('temp_') && !callId.startsWith('temp_')) {
+      for (const candidate of this.pendingLocalIceCandidates) {
+        signalingClient.send('webrtc:ice-candidate', {
+          callId: this.callId,
+          candidate,
+        });
+      }
+      this.pendingLocalIceCandidates = [];
+    }
+  }
+
+  hasRemoteDescription(): boolean {
+    return !!this.peerConnection?.remoteDescription;
   }
 
   async handleAnswer(answer: RTCSessionDescriptionType) {
@@ -199,6 +237,7 @@ class WebRTCManager {
     this.remoteStream = null;
     this.peerConnection = null;
     this.pendingCandidates = [];
+    this.pendingLocalIceCandidates = [];
     this.callId = null;
   }
 
