@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -12,11 +12,13 @@ import { AnimatedButton } from '../../src/components/ui/AnimatedButton';
 export default function OutgoingCallScreen() {
   const callStore = useCallStore();
   const { endCall, initiateCall } = useCall();
+  const hasStartedRef = useRef(false);
 
   useEffect(() => {
-    if (callStore.remoteUserId && callStore.remoteUsername) {
-      initiateCall(callStore.remoteUserId, callStore.remoteUsername, callStore.callType);
-    }
+    if (!callStore.remoteUserId || !callStore.remoteUsername || hasStartedRef.current) return;
+    hasStartedRef.current = true;
+    void initiateCall(callStore.remoteUserId, callStore.remoteUsername, callStore.callType);
+    // Outgoing screen mounts once per call with store already populated from HomeScreen.
   }, []);
 
   useEffect(() => {

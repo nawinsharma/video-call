@@ -21,8 +21,18 @@ class ConnectionManager {
     this.connections.set(userId, { userId, username, ws });
   }
 
-  remove(userId: string) {
+  remove(
+    userId: string,
+    ws?: {
+      send: (data: string) => void;
+    }
+  ): boolean {
+    const client = this.connections.get(userId);
+    if (!client) return false;
+    if (ws && client.ws !== ws) return false;
+
     this.connections.delete(userId);
+    return true;
   }
 
   get(userId: string): ConnectedClient | undefined {
@@ -41,7 +51,7 @@ class ConnectionManager {
       client.ws.send(JSON.stringify(message));
       return true;
     } catch {
-      this.connections.delete(userId);
+      this.remove(userId, client.ws);
       return false;
     }
   }
@@ -52,7 +62,7 @@ class ConnectionManager {
       try {
         client.ws.send(JSON.stringify(message));
       } catch {
-        this.connections.delete(userId);
+        this.remove(userId, client.ws);
       }
     }
   }

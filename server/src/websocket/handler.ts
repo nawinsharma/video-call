@@ -295,7 +295,9 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
     const { userId } = getSocketMeta(ws);
     if (!userId) return;
 
-    connectionManager.remove(userId);
+    const removed = connectionManager.remove(userId, ws);
+    if (!removed) return;
+
     connectionManager.broadcast({ type: 'user:offline', payload: { userId } });
 
     console.log(`[WS] User ${userId} disconnected. Online: ${connectionManager.getCount()}`);
