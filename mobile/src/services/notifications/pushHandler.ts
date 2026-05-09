@@ -33,7 +33,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
         name: 'Calls',
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#6C63FF',
+        lightColor: '#ffb900',
         sound: 'incoming.mp3',
       });
     }

@@ -168,10 +168,16 @@ class WebRTCManager {
       throw new Error('Peer connection is not initialized');
     }
 
-    await this.configureAudioForCall();
+    await this.configureAudioForCall(isVideo);
 
     const constraints: {
-      audio: boolean;
+      audio:
+        | boolean
+        | {
+            echoCancellation: boolean;
+            noiseSuppression: boolean;
+            autoGainControl: boolean;
+          };
       video:
         | boolean
         | {
@@ -181,7 +187,11 @@ class WebRTCManager {
             frameRate: { ideal: number; max: number };
           };
     } = {
-      audio: true,
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
       video: isVideo
         ? {
             facingMode: 'user',
@@ -192,7 +202,11 @@ class WebRTCManager {
         : false,
     };
 
-    this.localStream = await mediaDevices.getUserMedia(constraints);
+    // RN WebRTC's TypeScript type omits standard audio processing constraints
+    // that the native WebRTC layer accepts for echo control.
+    this.localStream = await mediaDevices.getUserMedia(
+      constraints as unknown as Parameters<typeof mediaDevices.getUserMedia>[0]
+    );
     console.log('[WebRTC] Local stream started:', {
       audioTracks: this.localStream.getAudioTracks().length,
       videoTracks: this.localStream.getVideoTracks().length,
@@ -376,16 +390,16 @@ class WebRTCManager {
     return this.remoteStream;
   }
 
-  private async configureAudioForCall() {
+  private async configureAudioForCall(isVideoCall: boolean) {
     this.audioModeGeneration++;
-    this.isSpeakerOn = true;
+    this.isSpeakerOn = isVideoCall;
     await Audio.setAudioModeAsync({
       playsInSilentModeIOS: true,
       allowsRecordingIOS: true,
       interruptionModeIOS: InterruptionModeIOS.DoNotMix,
       interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
       shouldDuckAndroid: false,
-      playThroughEarpieceAndroid: false,
+      playThroughEarpieceAndroid: !isVideoCall,
       staysActiveInBackground: true,
     });
   }
