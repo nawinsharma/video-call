@@ -25,7 +25,15 @@ export function GlassmorphicView({
       {...props}
     >
       <BlurView intensity={intensity} tint={tint} style={[styles.blur, { borderRadius }]}>
-        <View style={[styles.overlay, { borderRadius }]}>{children}</View>
+        <View
+          style={[
+            styles.overlay,
+            { borderRadius },
+            tint === 'light' ? styles.lightOverlay : styles.darkOverlay,
+          ]}
+        >
+          {children}
+        </View>
       </BlurView>
     </Animated.View>
   );
@@ -42,7 +50,12 @@ const styles = StyleSheet.create({
   },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
     padding: 16,
+  },
+  darkOverlay: {
+    backgroundColor: 'rgba(0, 0, 0, 0.28)',
+  },
+  lightOverlay: {
+    backgroundColor: 'rgba(255, 255, 255, 0.62)',
   },
 });

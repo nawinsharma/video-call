@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { GlassmorphicView } from '../ui/GlassmorphicView';
 import { AnimatedButton } from '../ui/AnimatedButton';
 import Animated, { SlideInDown, SlideOutDown } from 'react-native-reanimated';
+import { useAppTheme } from '../../theme/colors';
 
 interface CallControlsProps {
   isMuted: boolean;
@@ -28,19 +29,27 @@ export function CallControls({
   onEndCall,
   onToggleSpeaker,
 }: CallControlsProps) {
+  const theme = useAppTheme();
+
   return (
     <Animated.View entering={SlideInDown.springify().damping(18)} exiting={SlideOutDown}>
-      <GlassmorphicView style={styles.container} intensity={50} borderRadius={32}>
+      <GlassmorphicView
+        style={styles.container}
+        intensity={50}
+        borderRadius={32}
+        tint={theme.isDark ? 'dark' : 'light'}
+      >
         <View style={styles.controls}>
           <AnimatedButton
             onPress={onToggleMute}
             isActive={isMuted}
-            activeColor="rgba(255, 59, 48, 0.9)"
+            activeColor={theme.colors.danger}
+            inactiveColor={theme.colors.elevated}
           >
             <Ionicons
               name={isMuted ? 'mic-off' : 'mic'}
               size={24}
-              color="white"
+              color={isMuted ? 'white' : theme.colors.text}
             />
           </AnimatedButton>
 
@@ -48,38 +57,40 @@ export function CallControls({
             <AnimatedButton
               onPress={onToggleCamera}
               isActive={isCameraOff}
-              activeColor="rgba(255, 59, 48, 0.9)"
+              activeColor={theme.colors.danger}
+              inactiveColor={theme.colors.elevated}
             >
               <Ionicons
                 name={isCameraOff ? 'videocam-off' : 'videocam'}
                 size={24}
-                color="white"
+                color={isCameraOff ? 'white' : theme.colors.text}
               />
             </AnimatedButton>
           )}
 
           {isVideoCall && (
-            <AnimatedButton onPress={onFlipCamera}>
-              <Ionicons name="camera-reverse" size={24} color="white" />
+            <AnimatedButton onPress={onFlipCamera} inactiveColor={theme.colors.elevated}>
+              <Ionicons name="camera-reverse" size={24} color={theme.colors.text} />
             </AnimatedButton>
           )}
 
           <AnimatedButton
             onPress={onToggleSpeaker}
             isActive={!isSpeakerOn}
-            activeColor="rgba(255, 149, 0, 0.9)"
+            activeColor={theme.colors.accent}
+            inactiveColor={theme.colors.elevated}
           >
             <Ionicons
               name={isSpeakerOn ? 'volume-high' : 'volume-mute'}
               size={24}
-              color="white"
+              color={theme.colors.text}
             />
           </AnimatedButton>
 
           <AnimatedButton
             onPress={onEndCall}
             size={64}
-            activeColor="rgba(255, 59, 48, 1)"
+            activeColor={theme.colors.danger}
             isActive={true}
           >
             <Ionicons name="call" size={28} color="white" style={{ transform: [{ rotate: '135deg' }] }} />
