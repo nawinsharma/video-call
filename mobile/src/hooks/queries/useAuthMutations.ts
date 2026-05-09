@@ -3,23 +3,39 @@ import { authService } from '../../services/auth/authService';
 import type { AuthResponse } from '../../types';
 
 interface LoginVariables {
-  username: string;
+  identifier: string;
   password: string;
 }
 
-interface RegisterVariables extends LoginVariables {
+interface SendRegistrationOtpVariables {
+  username: string;
+  email: string;
+  password: string;
   displayName: string;
+}
+
+interface RegisterVariables {
+  username: string;
+  email: string;
+  password: string;
+  displayName: string;
+  otp: string;
 }
 
 export function useLoginMutation() {
   return useMutation<AuthResponse, Error, LoginVariables>({
-    mutationFn: ({ username, password }) => authService.login(username, password),
+    mutationFn: ({ identifier, password }) => authService.login(identifier, password),
+  });
+}
+
+export function useSendRegistrationOtpMutation() {
+  return useMutation<void, Error, SendRegistrationOtpVariables>({
+    mutationFn: (params) => authService.sendRegistrationOtp(params),
   });
 }
 
 export function useRegisterMutation() {
   return useMutation<AuthResponse, Error, RegisterVariables>({
-    mutationFn: ({ username, password, displayName }) =>
-      authService.register(username, password, displayName),
+    mutationFn: (params) => authService.register(params),
   });
 }
