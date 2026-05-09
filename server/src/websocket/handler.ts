@@ -8,12 +8,36 @@ import type {
   CallInitiatePayload,
   CallResponsePayload,
   ICECandidatePayload,
+  RTCSessionDescriptionInit,
   SocketMessage,
-  WSEventType,
   WSQueryMeta,
 } from '../types';
 
-const activeCalls = new Map<string, { callerId: string; calleeId: string; callType: 'audio' | 'video' }>();
+const activeCalls = new Map<string, {
+  callerId: string;
+  calleeId: string;
+  callType: 'audio' | 'video';
+  offer?: RTCSessionDescriptionInit;
+}>();
+
+async function deliverIncomingCall(callId: string) {
+  const call = activeCalls.get(callId);
+  if (!call) return false;
+
+  const iceServers = await getICEServers(call.calleeId);
+
+  return connectionManager.sendTo(call.calleeId, {
+    type: 'call:incoming',
+    payload: {
+      callId,
+      callerId: call.callerId,
+      callerName: connectionManager.get(call.callerId)?.username || 'Unknown',
+      callType: call.callType,
+      offer: call.offer,
+      iceServers,
+    },
+  });
+}
 
 interface SignalingSocket {
   data?: {
@@ -57,6 +81,12 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
 
     connectionManager.broadcast({ type: 'user:online', payload: { userId, username } }, userId);
 
+    for (const [callId, call] of activeCalls) {
+      if (call.calleeId === userId) {
+        void deliverIncomingCall(callId);
+      }
+    }
+
     console.log(`[WS] ${username} connected. Online: ${connectionManager.getCount()}`);
   },
 
@@ -94,22 +124,17 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
           })
           .returning();
 
-        activeCalls.set(call.id, { callerId: userId, calleeId, callType });
+        if (!call) {
+          ws.send(JSON.stringify({ type: 'error', payload: { message: 'Failed to create call' } }));
+          return;
+        }
 
-        const iceServers = await getICEServers(userId);
+        activeCalls.set(call.id, { callerId: userId, calleeId, callType, offer });
+
+        const callerIceServers = await getICEServers(userId);
 
         // Notify callee via WebSocket
-        const sent = connectionManager.sendTo(calleeId, {
-          type: 'call:incoming',
-          payload: {
-            callId: call.id,
-            callerId: userId,
-            callerName: connectionManager.get(userId)?.username || 'Unknown',
-            callType,
-            offer,
-            iceServers,
-          },
-        });
+        const sent = await deliverIncomingCall(call.id);
 
         // If callee is offline, send push notification
         if (!sent) {
@@ -130,7 +155,7 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
         // Confirm to caller
         ws.send(JSON.stringify({
           type: 'call:initiate',
-          payload: { callId: call.id, iceServers },
+          payload: { callId: call.id, iceServers: callerIceServers },
         }));
         break;
       }
