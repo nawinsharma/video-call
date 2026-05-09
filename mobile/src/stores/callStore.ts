@@ -11,6 +11,8 @@ interface CallStore extends CallState {
   toggleCamera: () => void;
   toggleSpeaker: () => void;
   flipCamera: () => void;
+  setRemoteAudioEnabled: (enabled: boolean) => void;
+  setRemoteVideoEnabled: (enabled: boolean) => void;
   updateDuration: (duration: number) => void;
   setIceServers: (servers: ICEServer[]) => void;
   endCall: () => void;
@@ -30,6 +32,8 @@ const initialState: CallState & { iceServers: ICEServer[] } = {
   isCameraOff: false,
   isSpeakerOn: true,
   isFrontCamera: true,
+  remoteAudioEnabled: true,
+  remoteVideoEnabled: true,
   iceServers: [],
 };
 
@@ -45,6 +49,12 @@ export const useCallStore = create<CallStore>((set) => ({
       role: 'caller',
       callType,
       status: 'outgoing',
+      isMuted: false,
+      isCameraOff: false,
+      isSpeakerOn: callType === 'video',
+      isFrontCamera: true,
+      remoteAudioEnabled: true,
+      remoteVideoEnabled: true,
       iceServers: iceServers || [],
     }),
 
@@ -57,6 +67,12 @@ export const useCallStore = create<CallStore>((set) => ({
       role: 'callee',
       callType,
       status: 'incoming',
+      isMuted: false,
+      isCameraOff: false,
+      isSpeakerOn: callType === 'video',
+      isFrontCamera: true,
+      remoteAudioEnabled: true,
+      remoteVideoEnabled: true,
       iceServers: iceServers || [],
     }),
 
@@ -76,6 +92,10 @@ export const useCallStore = create<CallStore>((set) => ({
   toggleSpeaker: () => set((state) => ({ isSpeakerOn: !state.isSpeakerOn })),
 
   flipCamera: () => set((state) => ({ isFrontCamera: !state.isFrontCamera })),
+
+  setRemoteAudioEnabled: (remoteAudioEnabled) => set({ remoteAudioEnabled }),
+
+  setRemoteVideoEnabled: (remoteVideoEnabled) => set({ remoteVideoEnabled }),
 
   updateDuration: (duration) => set({ duration }),
 
