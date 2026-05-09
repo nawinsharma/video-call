@@ -21,8 +21,15 @@ class SignalingClient {
 
   private createConnection() {
     if (!this.userId || !this.username) return;
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
 
-    const url = `${WS_URL}?userId=${this.userId}&username=${this.username}`;
+    const params = new URLSearchParams({
+      userId: this.userId,
+      username: this.username,
+    });
+    const url = `${WS_URL}?${params.toString()}`;
     this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
@@ -107,6 +114,8 @@ class SignalingClient {
     }
     this.ws?.close();
     this.ws = null;
+    this.userId = null;
+    this.username = null;
   }
 
   get isConnected(): boolean {

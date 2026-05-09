@@ -5,6 +5,7 @@ interface CallStore extends CallState {
   iceServers: ICEServer[];
   startCall: (params: { callId: string; remoteUserId: string; remoteUsername: string; callType: 'audio' | 'video'; iceServers?: ICEServer[] }) => void;
   receiveCall: (params: { callId: string; callerId: string; callerName: string; callType: 'audio' | 'video'; offer?: RTCSessionDescriptionType; iceServers?: ICEServer[] }) => void;
+  updateSession: (params: { callId?: string; iceServers?: ICEServer[]; remoteOffer?: RTCSessionDescriptionType | null }) => void;
   setStatus: (status: CallStatus) => void;
   toggleMute: () => void;
   toggleCamera: () => void;
@@ -55,6 +56,13 @@ export const useCallStore = create<CallStore>((set) => ({
       status: 'incoming',
       iceServers: iceServers || [],
     }),
+
+  updateSession: ({ callId, iceServers, remoteOffer }) =>
+    set((state) => ({
+      callId: callId ?? state.callId,
+      iceServers: iceServers ?? state.iceServers,
+      remoteOffer: remoteOffer === undefined ? state.remoteOffer : remoteOffer,
+    })),
 
   setStatus: (status) => set({ status }),
 

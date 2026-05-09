@@ -15,7 +15,6 @@ import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useLoginMutation, useRegisterMutation } from '../../src/hooks/queries/useAuthMutations';
-import { signalingClient } from '../../src/services/websocket/signalingClient';
 
 export default function LoginScreen() {
   const [isRegister, setIsRegister] = useState(false);
@@ -54,7 +53,6 @@ export default function LoginScreen() {
       }
 
       await setAuth(result.user, result.token);
-      signalingClient.connect(result.user.id, result.user.username);
       router.replace('/(main)');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
