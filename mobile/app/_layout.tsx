@@ -5,6 +5,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StyleSheet } from 'react-native';
 import { AppBootstrap } from '../src/components/AppBootstrap';
+import { useAppTheme } from '../src/theme/colors';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -13,15 +14,17 @@ const queryClient = new QueryClient({
 });
 
 export default function RootLayout() {
+  const theme = useAppTheme();
+
   return (
     <GestureHandlerRootView style={styles.root}>
       <QueryClientProvider client={queryClient}>
         <AppBootstrap />
-        <StatusBar style="light" />
+        <StatusBar style={theme.isDark ? 'light' : 'dark'} />
         <Stack
           screenOptions={{
             headerShown: false,
-            contentStyle: { backgroundColor: '#000' },
+            contentStyle: { backgroundColor: theme.colors.background },
             animation: 'fade',
           }}
         >
