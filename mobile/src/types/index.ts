@@ -1,10 +1,12 @@
 export interface User {
   id: string;
   username: string;
+  email?: string;
   displayName: string;
   avatarUrl?: string;
   isOnline?: boolean;
   lastSeen?: string;
+  isContact?: boolean;
 }
 
 export interface CallState {
@@ -20,6 +22,8 @@ export interface CallState {
   isCameraOff: boolean;
   isSpeakerOn: boolean;
   isFrontCamera: boolean;
+  remoteAudioEnabled: boolean;
+  remoteVideoEnabled: boolean;
 }
 
 export type CallStatus =
