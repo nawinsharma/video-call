@@ -147,6 +147,10 @@ class WebRTCManager {
     return answer as RTCSessionDescription;
   }
 
+  setCallId(callId: string) {
+    this.callId = callId;
+  }
+
   async handleAnswer(answer: RTCSessionDescriptionType) {
     await this.peerConnection!.setRemoteDescription(
       new RTCSessionDescription(answer)

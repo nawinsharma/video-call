@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { router } from 'expo-router';
-import { useCallStore } from '../../stores/callStore';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -34,11 +34,20 @@ export async function registerForPushNotifications(): Promise<string | null> {
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#6C63FF',
-        sound: 'default',
+        sound: 'ringtone.mp3',
       });
     }
 
-    const token = await Notifications.getExpoPushTokenAsync();
+    const projectId =
+      Constants.expoConfig?.extra?.eas?.projectId ??
+      Constants.easConfig?.projectId;
+
+    if (!projectId) {
+      console.warn('[Push] Missing Expo projectId, skipping push registration');
+      return null;
+    }
+
+    const token = await Notifications.getExpoPushTokenAsync({ projectId });
     return token.data;
   } catch {
     return null;

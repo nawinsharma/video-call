@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { useCallStore } from '../stores/callStore';
 import { signalingClient } from '../services/websocket/signalingClient';
 import { webrtcManager } from '../services/webrtc/webrtcManager';
@@ -6,18 +6,55 @@ import { callsService } from '../services/calls/callsService';
 import { WS_EVENTS, CALL_TIMEOUT_MS } from '../constants';
 import * as Haptics from 'expo-haptics';
 import { MediaStream } from 'react-native-webrtc';
-import { useState } from 'react';
 import type { ICEServer, RTCIceCandidateType } from '../types';
 
-export function useCall() {
-  const callStore = useCallStore();
-  const callTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const durationInterval = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+let callTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+let durationInterval: ReturnType<typeof setInterval> | null = null;
 
+function clearCallTimeout() {
+  if (callTimeoutTimer) {
+    clearTimeout(callTimeoutTimer);
+    callTimeoutTimer = null;
+  }
+}
+
+function startDurationTimer() {
+  if (durationInterval) return;
+
+  const startTime = Date.now() - useCallStore.getState().duration * 1000;
+  durationInterval = setInterval(() => {
+    useCallStore.getState().updateDuration(Math.floor((Date.now() - startTime) / 1000));
+  }, 1000);
+}
+
+function stopDurationTimer() {
+  if (durationInterval) {
+    clearInterval(durationInterval);
+    durationInterval = null;
+  }
+}
+
+function cleanupCallState() {
+  clearCallTimeout();
+  stopDurationTimer();
+  webrtcManager.cleanup();
+}
+
+export function useCallEvents() {
   useEffect(() => {
     const unsubs: (() => void)[] = [];
+
+    unsubs.push(
+      signalingClient.on(WS_EVENTS.CALL_INITIATE, (msg) => {
+        const { callId, iceServers } = msg.payload as {
+          callId: string;
+          iceServers?: Array<{ urls: string[]; username?: string; credential?: string }>;
+        };
+
+        useCallStore.getState().updateSession({ callId, iceServers });
+        webrtcManager.setCallId(callId);
+      })
+    );
 
     unsubs.push(
       signalingClient.on(WS_EVENTS.CALL_INCOMING, (msg) => {
@@ -29,8 +66,8 @@ export function useCall() {
           offer?: { type: 'offer' | 'answer'; sdp: string };
           iceServers?: Array<{ urls: string[]; username?: string; credential?: string }>;
         };
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        callStore.receiveCall({ callId, callerId, callerName, callType, offer, iceServers });
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        useCallStore.getState().receiveCall({ callId, callerId, callerName, callType, offer, iceServers });
       })
     );
 
@@ -41,77 +78,73 @@ export function useCall() {
           answer: { type: 'offer' | 'answer'; sdp: string };
           iceServers?: Array<{ urls: string[]; username?: string; credential?: string }>;
         };
+
         clearCallTimeout();
-        callStore.setStatus('active');
-        if (iceServers) callStore.setIceServers(iceServers);
+        useCallStore.getState().setStatus('active');
+        if (iceServers) useCallStore.getState().setIceServers(iceServers);
         await webrtcManager.handleAnswer(answer);
         startDurationTimer();
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       })
     );
 
     unsubs.push(
       signalingClient.on(WS_EVENTS.CALL_REJECTED, () => {
         clearCallTimeout();
-        callStore.endCall();
-        webrtcManager.cleanup();
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        useCallStore.getState().endCall();
+        cleanupCallState();
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       })
     );
 
     unsubs.push(
       signalingClient.on(WS_EVENTS.CALL_ENDED, () => {
-        clearCallTimeout();
-        stopDurationTimer();
-        callStore.endCall();
-        webrtcManager.cleanup();
-        setLocalStream(null);
-        setRemoteStream(null);
+        useCallStore.getState().endCall();
+        cleanupCallState();
       })
     );
 
     unsubs.push(
       signalingClient.on(WS_EVENTS.WEBRTC_ICE_CANDIDATE, (msg) => {
         const payload = msg.payload as { candidate: RTCIceCandidateType };
-        webrtcManager.addIceCandidate(payload.candidate);
+        void webrtcManager.addIceCandidate(payload.candidate);
       })
     );
 
-    unsubs.push(
-      signalingClient.on(WS_EVENTS.MEDIA_TOGGLE_AUDIO, (msg) => {
-        // Remote user toggled their audio
-      })
-    );
-
-    unsubs.push(
-      signalingClient.on(WS_EVENTS.MEDIA_TOGGLE_VIDEO, (msg) => {
-        // Remote user toggled their video
-      })
-    );
+    unsubs.push(signalingClient.on(WS_EVENTS.MEDIA_TOGGLE_AUDIO, () => {}));
+    unsubs.push(signalingClient.on(WS_EVENTS.MEDIA_TOGGLE_VIDEO, () => {}));
 
     return () => unsubs.forEach((unsub) => unsub());
   }, []);
+}
 
-  const clearCallTimeout = () => {
-    if (callTimeout.current) {
-      clearTimeout(callTimeout.current);
-      callTimeout.current = null;
-    }
-  };
+export function useCall() {
+  const callStore = useCallStore();
+  const [localStream, setLocalStream] = useState<MediaStream | null>(() => webrtcManager.getLocalStream());
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(() => webrtcManager.getRemoteStream());
 
-  const startDurationTimer = () => {
-    const startTime = Date.now();
-    durationInterval.current = setInterval(() => {
-      callStore.updateDuration(Math.floor((Date.now() - startTime) / 1000));
-    }, 1000);
-  };
+  useEffect(() => {
+    webrtcManager.setCallbacks({
+      onRemoteStream: (stream) => setRemoteStream(stream),
+      onLocalStream: (stream) => setLocalStream(stream),
+      onConnectionStateChange: (state) => {
+        if (state === 'connected') {
+          useCallStore.getState().setStatus('active');
+          startDurationTimer();
+        }
+        if (state === 'disconnected') useCallStore.getState().setStatus('reconnecting');
+        if (state === 'failed') {
+          useCallStore.getState().endCall();
+          cleanupCallState();
+          setLocalStream(null);
+          setRemoteStream(null);
+        }
+      },
+    });
 
-  const stopDurationTimer = () => {
-    if (durationInterval.current) {
-      clearInterval(durationInterval.current);
-      durationInterval.current = null;
-    }
-  };
+    setLocalStream(webrtcManager.getLocalStream());
+    setRemoteStream(webrtcManager.getRemoteStream());
+  }, []);
 
   const fetchIceServers = useCallback(async (fallback: ICEServer[]): Promise<ICEServer[]> => {
     try {
@@ -125,17 +158,7 @@ export function useCall() {
 
   const initiateCall = useCallback(async (remoteUserId: string, remoteUsername: string, callType: 'audio' | 'video') => {
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-      webrtcManager.setCallbacks({
-        onRemoteStream: (stream) => setRemoteStream(stream),
-        onLocalStream: (stream) => setLocalStream(stream),
-        onConnectionStateChange: (state) => {
-          if (state === 'connected') callStore.setStatus('active');
-          if (state === 'disconnected') callStore.setStatus('reconnecting');
-          if (state === 'failed') endCall();
-        },
-      });
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       const iceServers = await fetchIceServers(callStore.iceServers);
       await webrtcManager.initialize(iceServers);
@@ -146,42 +169,38 @@ export function useCall() {
 
       const offer = await webrtcManager.createOffer(tempCallId);
 
-      signalingClient.send('call:initiate', {
+      const sent = signalingClient.send('call:initiate', {
         calleeId: remoteUserId,
         callType,
         offer: { type: offer.type, sdp: offer.sdp },
       });
+      if (!sent) {
+        throw new Error('Signaling connection unavailable');
+      }
 
       // Set timeout for unanswered call
-      callTimeout.current = setTimeout(() => {
-        if (callStore.status === 'outgoing') {
-          endCall();
-        }
+      callTimeoutTimer = setTimeout(() => {
+        if (useCallStore.getState().status !== 'outgoing') return;
+
+        signalingClient.send('call:end', { callId: useCallStore.getState().callId });
+        useCallStore.getState().endCall();
+        cleanupCallState();
+        setLocalStream(null);
+        setRemoteStream(null);
       }, CALL_TIMEOUT_MS);
     } catch (error) {
       console.error('[Call] Failed to initiate:', error);
       callStore.reset();
-      webrtcManager.cleanup();
+      cleanupCallState();
+      setLocalStream(null);
+      setRemoteStream(null);
     }
-  }, []);
+  }, [callStore, fetchIceServers]);
 
   const acceptCall = useCallback(async () => {
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       callStore.setStatus('connecting');
-
-      webrtcManager.setCallbacks({
-        onRemoteStream: (stream) => setRemoteStream(stream),
-        onLocalStream: (stream) => setLocalStream(stream),
-        onConnectionStateChange: (state) => {
-          if (state === 'connected') {
-            callStore.setStatus('active');
-            startDurationTimer();
-          }
-          if (state === 'disconnected') callStore.setStatus('reconnecting');
-          if (state === 'failed') endCall();
-        },
-      });
 
       const iceServers = await fetchIceServers(callStore.iceServers);
       await webrtcManager.initialize(iceServers);
@@ -193,39 +212,44 @@ export function useCall() {
       }
       const answer = await webrtcManager.handleOffer(callStore.callId, callStore.remoteOffer);
 
-      signalingClient.send('call:accept', {
+      const sent = signalingClient.send('call:accept', {
         callId: callStore.callId,
         answer: { type: answer.type, sdp: answer.sdp },
       });
+      if (!sent) {
+        throw new Error('Signaling connection unavailable');
+      }
 
       callStore.setStatus('active');
       startDurationTimer();
     } catch (error) {
       console.error('[Call] Failed to accept:', error);
       callStore.reset();
-      webrtcManager.cleanup();
+      cleanupCallState();
+      setLocalStream(null);
+      setRemoteStream(null);
     }
-  }, []);
+  }, [callStore, fetchIceServers]);
 
   const rejectCall = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     signalingClient.send('call:reject', { callId: callStore.callId });
     callStore.reset();
-    webrtcManager.cleanup();
+    cleanupCallState();
     setLocalStream(null);
     setRemoteStream(null);
-  }, []);
+  }, [callStore]);
 
   const endCall = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     clearCallTimeout();
     stopDurationTimer();
     signalingClient.send('call:end', { callId: callStore.callId });
     callStore.endCall();
-    webrtcManager.cleanup();
+    cleanupCallState();
     setLocalStream(null);
     setRemoteStream(null);
-  }, []);
+  }, [callStore]);
 
   const toggleMute = useCallback(() => {
     callStore.toggleMute();
@@ -234,8 +258,8 @@ export function useCall() {
       callId: callStore.callId,
       enabled: callStore.isMuted,
     });
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, []);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [callStore]);
 
   const toggleCamera = useCallback(() => {
     callStore.toggleCamera();
@@ -244,14 +268,14 @@ export function useCall() {
       callId: callStore.callId,
       enabled: callStore.isCameraOff,
     });
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, []);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [callStore]);
 
   const flipCamera = useCallback(() => {
     callStore.flipCamera();
     webrtcManager.switchCamera();
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, []);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [callStore]);
 
   return {
     ...callStore,

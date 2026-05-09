@@ -8,25 +8,38 @@ import { useCallStore } from '../../src/stores/callStore';
 import { useCall } from '../../src/hooks/useCall';
 import { PulsingRing } from '../../src/components/animations/PulsingRing';
 import { AnimatedButton } from '../../src/components/ui/AnimatedButton';
+import { ringtoneService } from '../../src/services/calls/ringtoneService';
 
 export default function IncomingCallScreen() {
   const callStore = useCallStore();
   const { acceptCall, rejectCall } = useCall();
 
   useEffect(() => {
+    if (callStore.status === 'incoming') {
+      void ringtoneService.play();
+    } else {
+      void ringtoneService.stop();
+    }
+
     if (callStore.status === 'active' || callStore.status === 'connecting') {
       router.replace('/call/active');
     }
     if (callStore.status === 'ended' || callStore.status === 'idle') {
       router.back();
     }
+
+    return () => {
+      void ringtoneService.stop();
+    };
   }, [callStore.status]);
 
   const handleAccept = () => {
+    void ringtoneService.stop();
     acceptCall();
   };
 
   const handleReject = () => {
+    void ringtoneService.stop();
     rejectCall();
     router.back();
   };
