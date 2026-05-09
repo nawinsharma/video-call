@@ -61,8 +61,9 @@ class WebRTCManager {
       } catch {
         /* ignore */
       }
-      this.peerConnection = null;
     }
+    this.peerConnection = null;
+    this.pendingCandidates = [];
     this.pendingLocalIceCandidates = [];
 
     const config = {
@@ -171,13 +172,13 @@ class WebRTCManager {
   }
 
   setCallId(callId: string) {
-    const prev = this.callId;
+    const previousCallId = this.callId;
     this.callId = callId;
 
-    if (prev?.startsWith('temp_') && !callId.startsWith('temp_')) {
+    if (previousCallId?.startsWith('temp_') && !callId.startsWith('temp_')) {
       for (const candidate of this.pendingLocalIceCandidates) {
         signalingClient.send('webrtc:ice-candidate', {
-          callId: this.callId,
+          callId,
           candidate,
         });
       }

@@ -61,14 +61,19 @@ export function useCallEvents() {
 
     unsubs.push(
       signalingClient.on(WS_EVENTS.CALL_INITIATE, (msg) => {
-        const { callId, iceServers } = msg.payload as {
+        const { callId, iceServers, delivered } = msg.payload as {
           callId: string;
           iceServers?: Array<{ urls: string[]; username?: string; credential?: string }>;
+          delivered?: boolean;
         };
 
         if (useCallStore.getState().status !== 'outgoing') return;
         useCallStore.getState().updateSession({ callId, iceServers });
         webrtcManager.setCallId(callId);
+
+        if (delivered === false) {
+          console.warn('[Call] Receiver is not connected to signaling; waiting for push/reconnect fallback');
+        }
       })
     );
 
@@ -82,6 +87,11 @@ export function useCallEvents() {
           offer?: { type: 'offer' | 'answer'; sdp: string };
           iceServers?: Array<{ urls: string[]; username?: string; credential?: string }>;
         };
+        if (useCallStore.getState().status !== 'idle') {
+          signalingClient.send('call:busy', { callId });
+          return;
+        }
+
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         useCallStore.getState().receiveCall({ callId, callerId, callerName, callType, offer, iceServers });
       })

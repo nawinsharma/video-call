@@ -155,7 +155,7 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
         // Confirm to caller
         ws.send(JSON.stringify({
           type: 'call:initiate',
-          payload: { callId: call.id, iceServers: callerIceServers },
+          payload: { callId: call.id, iceServers: callerIceServers, delivered: sent },
         }));
         break;
       }
@@ -194,6 +194,25 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
         connectionManager.sendTo(call.callerId, {
           type: 'call:rejected',
           payload: { callId },
+        });
+        break;
+      }
+
+      case 'call:busy': {
+        const { callId } = payload as unknown as { callId: string };
+        const call = activeCalls.get(callId);
+        if (!call) return;
+
+        await db
+          .update(schema.calls)
+          .set({ status: 'rejected', endedAt: new Date() })
+          .where(eq(schema.calls.id, callId));
+
+        activeCalls.delete(callId);
+
+        connectionManager.sendTo(call.callerId, {
+          type: 'call:rejected',
+          payload: { callId, reason: 'busy' },
         });
         break;
       }

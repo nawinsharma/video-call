@@ -14,7 +14,7 @@ export const jwtPlugin = new Elysia({ name: 'jwt' })
 
 export const authGuard = new Elysia({ name: 'authGuard' })
   .use(jwtPlugin)
-  .resolve({ as: 'global' }, async ({ jwt, bearer, set }) => {
+  .resolve({ as: 'scoped' }, async ({ jwt, bearer, set }) => {
     if (!bearer) {
       set.status = 401;
       throw new Error('Unauthorized: No token provided');

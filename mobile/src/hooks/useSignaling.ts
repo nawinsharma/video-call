@@ -4,12 +4,14 @@ import { useAuthStore } from '../stores/authStore';
 import type { WSEventType } from '../types';
 
 export function useSignaling() {
-  const { user } = useAuthStore();
+  const user = useAuthStore((state) => state.user);
   const isConnected = useRef(false);
+  const userId = user?.id;
+  const username = user?.username;
 
   useEffect(() => {
-    if (user && !isConnected.current) {
-      signalingClient.connect(user.id, user.username);
+    if (userId && username && !isConnected.current) {
+      signalingClient.connect(userId, username);
       isConnected.current = true;
     }
 
@@ -19,7 +21,7 @@ export function useSignaling() {
         isConnected.current = false;
       }
     };
-  }, [user]);
+  }, [userId, username]);
 
   const sendMessage = useCallback((type: WSEventType, payload: Record<string, unknown>) => {
     return signalingClient.send(type, payload);
