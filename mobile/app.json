@@ -34,8 +34,10 @@
         "RECORD_AUDIO",
         "MODIFY_AUDIO_SETTINGS",
         "INTERNET",
+        "ACCESS_NETWORK_STATE",
         "WAKE_LOCK",
-        "VIBRATE"
+        "VIBRATE",
+        "POST_NOTIFICATIONS"
       ]
     },
     "plugins": [
@@ -45,7 +47,9 @@
         "expo-notifications",
         {
           "sounds": [
-            "./assets/sounds/ringtone.mp3"
+            "./assets/sounds/ringtone.mp3",
+            "./assets/sounds/incoming.mp3",
+            "./assets/sounds/outgoing.mp3"
           ]
         }
       ]

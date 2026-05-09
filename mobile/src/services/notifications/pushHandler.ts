@@ -29,12 +29,12 @@ export async function registerForPushNotifications(): Promise<string | null> {
     }
 
     if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('calls', {
+      await Notifications.setNotificationChannelAsync('incoming-calls', {
         name: 'Calls',
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#6C63FF',
-        sound: 'ringtone.mp3',
+        sound: 'incoming.mp3',
       });
     }
 

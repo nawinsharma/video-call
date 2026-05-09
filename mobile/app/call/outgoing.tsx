@@ -4,15 +4,19 @@ import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
+import { RTCView } from 'react-native-webrtc';
 import { useCallStore } from '../../src/stores/callStore';
 import { useCall } from '../../src/hooks/useCall';
 import { PulsingRing } from '../../src/components/animations/PulsingRing';
 import { AnimatedButton } from '../../src/components/ui/AnimatedButton';
+import { ringtoneService } from '../../src/services/calls/ringtoneService';
 
 export default function OutgoingCallScreen() {
   const callStore = useCallStore();
-  const { endCall, initiateCall } = useCall();
+  const { endCall, initiateCall, localStream } = useCall();
   const hasStartedRef = useRef(false);
+  const isVideoCall = callStore.callType === 'video';
+  const showLocalPreview = isVideoCall && localStream;
 
   useEffect(() => {
     if (!callStore.remoteUserId || !callStore.remoteUsername || hasStartedRef.current) return;
@@ -22,22 +26,48 @@ export default function OutgoingCallScreen() {
   }, []);
 
   useEffect(() => {
-    if (callStore.status === 'active') {
+    if (callStore.status === 'outgoing') {
+      void ringtoneService.playOutgoing();
+    } else {
+      void ringtoneService.stop();
+    }
+
+    return () => {
+      void ringtoneService.stop();
+    };
+  }, [callStore.status]);
+
+  useEffect(() => {
+    if (callStore.status === 'connecting' || callStore.status === 'active' || callStore.status === 'reconnecting') {
       router.replace('/call/active');
     }
     if (callStore.status === 'ended' || callStore.status === 'idle') {
+      callStore.reset();
       router.back();
     }
   }, [callStore.status]);
 
   const handleCancel = () => {
+    void ringtoneService.stop();
     endCall();
-    router.back();
   };
 
   return (
     <LinearGradient colors={['#1A1A2E', '#16213E', '#0F3460']} style={styles.gradient}>
       <Animated.View entering={FadeIn} style={styles.container}>
+        {showLocalPreview && (
+          <>
+            <RTCView
+              streamURL={localStream.toURL()}
+              style={styles.localPreview}
+              objectFit="cover"
+              mirror={callStore.isFrontCamera}
+              zOrder={0}
+            />
+            <View style={styles.videoScrim} />
+          </>
+        )}
+
         <Animated.View entering={FadeInDown.delay(100)} style={styles.header}>
           <Text style={styles.callingText}>Calling...</Text>
           <Text style={styles.callType}>
@@ -77,11 +107,20 @@ export default function OutgoingCallScreen() {
 
 const styles = StyleSheet.create({
   gradient: { flex: 1 },
-  container: { flex: 1, alignItems: 'center', justifyContent: 'space-between', paddingVertical: 80 },
-  header: { alignItems: 'center' },
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 80,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  localPreview: { ...StyleSheet.absoluteFillObject },
+  videoScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.35)' },
+  header: { alignItems: 'center', zIndex: 1 },
   callingText: { fontSize: 18, color: 'rgba(255,255,255,0.6)', fontWeight: '500' },
   callType: { fontSize: 14, color: 'rgba(255,255,255,0.3)', marginTop: 4 },
-  avatarSection: { alignItems: 'center', justifyContent: 'center', width: 200, height: 200 },
+  avatarSection: { alignItems: 'center', justifyContent: 'center', width: 200, height: 200, zIndex: 1 },
   avatar: {
     width: 120,
     height: 120,
@@ -93,6 +132,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(108, 99, 255, 0.5)',
   },
   avatarText: { fontSize: 48, fontWeight: '700', color: 'white' },
-  remoteName: { fontSize: 28, fontWeight: '700', color: 'white', letterSpacing: -0.5 },
-  controls: { alignItems: 'center' },
+  remoteName: { fontSize: 28, fontWeight: '700', color: 'white', letterSpacing: -0.5, zIndex: 1 },
+  controls: { alignItems: 'center', zIndex: 1 },
 });

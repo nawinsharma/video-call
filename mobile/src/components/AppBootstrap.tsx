@@ -56,7 +56,10 @@ export function AppBootstrap() {
       return;
     }
 
-    if (callStatus === 'active' && currentRoute !== '/call/active') {
+    if (
+      (callStatus === 'connecting' || callStatus === 'active' || callStatus === 'reconnecting') &&
+      currentRoute !== '/call/active'
+    ) {
       router.replace('/call/active');
     }
   }, [callStatus, isAuthenticated, segments]);

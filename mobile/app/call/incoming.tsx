@@ -16,7 +16,7 @@ export default function IncomingCallScreen() {
 
   useEffect(() => {
     if (callStore.status === 'incoming') {
-      void ringtoneService.play();
+      void ringtoneService.playIncoming();
     } else {
       void ringtoneService.stop();
     }
@@ -25,6 +25,7 @@ export default function IncomingCallScreen() {
       router.replace('/call/active');
     }
     if (callStore.status === 'ended' || callStore.status === 'idle') {
+      callStore.reset();
       router.back();
     }
 
@@ -41,7 +42,6 @@ export default function IncomingCallScreen() {
   const handleReject = () => {
     void ringtoneService.stop();
     rejectCall();
-    router.back();
   };
 
   return (

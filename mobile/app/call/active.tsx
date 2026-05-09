@@ -30,6 +30,7 @@ export default function ActiveCallScreen() {
     endCall,
     toggleMute,
     toggleCamera,
+    toggleSpeaker,
     flipCamera,
   } = useCall();
 
@@ -131,7 +132,7 @@ export default function ActiveCallScreen() {
           onToggleCamera={toggleCamera}
           onFlipCamera={flipCamera}
           onEndCall={endCall}
-          onToggleSpeaker={() => {}}
+          onToggleSpeaker={toggleSpeaker}
         />
       </Animated.View>
 

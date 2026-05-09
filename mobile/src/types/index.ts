@@ -12,6 +12,7 @@ export interface CallState {
   remoteUserId: string | null;
   remoteUsername: string | null;
   remoteOffer: RTCSessionDescriptionType | null;
+  role: 'caller' | 'callee' | null;
   callType: 'audio' | 'video';
   status: CallStatus;
   duration: number;
@@ -45,6 +46,8 @@ export type WSEventType =
   | 'webrtc:answer'
   | 'webrtc:ice-candidate'
   | 'webrtc:renegotiate'
+  | 'connection:ping'
+  | 'connection:pong'
   | 'user:online'
   | 'user:offline'
   | 'call:incoming'
@@ -61,7 +64,7 @@ export type WSEventType =
   | 'connection:failed';
 
 export interface ICEServer {
-  urls: string[];
+  urls: string | string[];
   username?: string;
   credential?: string;
 }

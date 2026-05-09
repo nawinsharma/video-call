@@ -8,7 +8,7 @@ import {
   TextInput,
   RefreshControl,
 } from 'react-native';
-import { Redirect, router } from 'expo-router';
+import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,10 +24,6 @@ export default function HomeScreen() {
   const callStore = useCallStore();
   const [searchQuery, setSearchQuery] = useState('');
   const { data: users = [], isRefetching, refetch } = useUsersQuery();
-
-  if (callStore.status === 'incoming') {
-    return <Redirect href="/call/incoming" />;
-  }
 
   const handleCall = (user: User, type: 'audio' | 'video') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
