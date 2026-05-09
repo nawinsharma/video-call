@@ -301,8 +301,23 @@ export function useCallEvents() {
       })
     );
 
-    unsubs.push(signalingClient.on(WS_EVENTS.MEDIA_TOGGLE_AUDIO, () => {}));
-    unsubs.push(signalingClient.on(WS_EVENTS.MEDIA_TOGGLE_VIDEO, () => {}));
+    unsubs.push(
+      signalingClient.on(WS_EVENTS.MEDIA_TOGGLE_AUDIO, (msg) => {
+        const { userId, enabled } = msg.payload as { userId?: string; enabled?: boolean };
+        const { remoteUserId } = useCallStore.getState();
+        if (!userId || userId !== remoteUserId || typeof enabled !== 'boolean') return;
+        useCallStore.getState().setRemoteAudioEnabled(enabled);
+      })
+    );
+
+    unsubs.push(
+      signalingClient.on(WS_EVENTS.MEDIA_TOGGLE_VIDEO, (msg) => {
+        const { userId, enabled } = msg.payload as { userId?: string; enabled?: boolean };
+        const { remoteUserId } = useCallStore.getState();
+        if (!userId || userId !== remoteUserId || typeof enabled !== 'boolean') return;
+        useCallStore.getState().setRemoteVideoEnabled(enabled);
+      })
+    );
 
     return () => unsubs.forEach((unsub) => unsub());
   }, []);
@@ -324,6 +339,7 @@ export function useCall() {
           clearIceRestartTimer();
           iceRestartAttempts = 0;
           useCallStore.getState().setStatus('active');
+          void webrtcManager.setSpeakerOn(useCallStore.getState().isSpeakerOn);
           startDurationTimer();
         }
         if (state === 'disconnected') {
