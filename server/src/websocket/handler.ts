@@ -18,11 +18,54 @@ const activeCalls = new Map<string, {
   calleeId: string;
   callType: 'audio' | 'video';
   offer?: RTCSessionDescriptionInit;
+  createdAt: number;
+  acceptedAt?: number;
 }>();
+
+const RINGING_CALL_TTL_MS = 60 * 1000;
+const ACTIVE_CALL_TTL_MS = 4 * 60 * 60 * 1000;
+
+function userCanAccessCall(userId: string, call: { callerId: string; calleeId: string }) {
+  return call.callerId === userId || call.calleeId === userId;
+}
+
+function getPeerUserId(userId: string, call: { callerId: string; calleeId: string }) {
+  if (call.callerId === userId) return call.calleeId;
+  if (call.calleeId === userId) return call.callerId;
+  return null;
+}
+
+async function cleanupStaleCalls() {
+  const now = Date.now();
+
+  for (const [callId, call] of activeCalls) {
+    const ttl = call.acceptedAt ? ACTIVE_CALL_TTL_MS : RINGING_CALL_TTL_MS;
+    if (now - call.createdAt <= ttl) continue;
+
+    activeCalls.delete(callId);
+    await db
+      .update(schema.calls)
+      .set({
+        status: call.acceptedAt ? 'ended' : 'missed',
+        endedAt: new Date(),
+      })
+      .where(eq(schema.calls.id, callId));
+
+    connectionManager.sendTo(call.callerId, {
+      type: call.acceptedAt ? 'call:ended' : 'call:missed',
+      payload: { callId, reason: 'timeout' },
+    }, { queueIfOffline: true });
+    connectionManager.sendTo(call.calleeId, {
+      type: call.acceptedAt ? 'call:ended' : 'call:missed',
+      payload: { callId, reason: 'timeout' },
+    }, { queueIfOffline: true });
+  }
+}
 
 async function deliverIncomingCall(callId: string) {
   const call = activeCalls.get(callId);
   if (!call) return false;
+  if (call.acceptedAt) return false;
 
   const iceServers = await getICEServers(call.calleeId);
 
@@ -82,7 +125,7 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
     connectionManager.broadcast({ type: 'user:online', payload: { userId, username } }, userId);
 
     for (const [callId, call] of activeCalls) {
-      if (call.calleeId === userId) {
+      if (call.calleeId === userId && !call.acceptedAt) {
         void deliverIncomingCall(callId);
       }
     }
@@ -94,6 +137,8 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
     const ws = rawWs as unknown as SignalingSocket;
     const { userId } = getSocketMeta(ws);
     if (!userId) return;
+
+    void cleanupStaleCalls();
 
     let message: SocketMessage | null = null;
     try {
@@ -110,8 +155,18 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
     const { type, payload } = message;
 
     switch (type) {
+      case 'connection:ping': {
+        ws.send(JSON.stringify({ type: 'connection:pong', payload }));
+        break;
+      }
+
       case 'call:initiate': {
         const { calleeId, callType, offer } = payload as unknown as CallInitiatePayload;
+
+        if (!calleeId || calleeId === userId || !callType || !offer) {
+          ws.send(JSON.stringify({ type: 'error', payload: { message: 'Invalid call initiate payload' } }));
+          return;
+        }
 
         // Create call record
         const [call] = await db
@@ -129,7 +184,7 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
           return;
         }
 
-        activeCalls.set(call.id, { callerId: userId, calleeId, callType, offer });
+        activeCalls.set(call.id, { callerId: userId, calleeId, callType, offer, createdAt: Date.now() });
 
         const callerIceServers = await getICEServers(userId);
 
@@ -164,6 +219,9 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
         const { callId, answer } = payload as unknown as CallResponsePayload;
         const call = activeCalls.get(callId);
         if (!call) return;
+        if (call.calleeId !== userId || !answer) return;
+
+        call.acceptedAt = Date.now();
 
         await db
           .update(schema.calls)
@@ -175,7 +233,7 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
         connectionManager.sendTo(call.callerId, {
           type: 'call:accepted',
           payload: { callId, answer, iceServers },
-        });
+        }, { queueIfOffline: true });
         break;
       }
 
@@ -183,6 +241,7 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
         const { callId } = payload as unknown as { callId: string };
         const call = activeCalls.get(callId);
         if (!call) return;
+        if (!userCanAccessCall(userId, call)) return;
 
         await db
           .update(schema.calls)
@@ -191,10 +250,13 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
 
         activeCalls.delete(callId);
 
-        connectionManager.sendTo(call.callerId, {
+        const targetId = getPeerUserId(userId, call);
+        if (!targetId) return;
+
+        connectionManager.sendTo(targetId, {
           type: 'call:rejected',
           payload: { callId },
-        });
+        }, { queueIfOffline: true });
         break;
       }
 
@@ -202,6 +264,7 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
         const { callId } = payload as unknown as { callId: string };
         const call = activeCalls.get(callId);
         if (!call) return;
+        if (call.calleeId !== userId) return;
 
         await db
           .update(schema.calls)
@@ -213,7 +276,7 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
         connectionManager.sendTo(call.callerId, {
           type: 'call:rejected',
           payload: { callId, reason: 'busy' },
-        });
+        }, { queueIfOffline: true });
         break;
       }
 
@@ -221,6 +284,7 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
         const { callId } = payload as unknown as { callId: string };
         const call = activeCalls.get(callId);
         if (!call) return;
+        if (!userCanAccessCall(userId, call)) return;
 
         const callRecord = await db.query.calls.findFirst({
           where: eq(schema.calls.id, callId),
@@ -237,11 +301,12 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
 
         activeCalls.delete(callId);
 
-        const otherUserId = call.callerId === userId ? call.calleeId : call.callerId;
+        const otherUserId = getPeerUserId(userId, call);
+        if (!otherUserId) return;
         connectionManager.sendTo(otherUserId, {
           type: 'call:ended',
           payload: { callId, duration },
-        });
+        }, { queueIfOffline: true });
         break;
       }
 
@@ -252,12 +317,32 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
         };
         const call = activeCalls.get(callId);
         if (!call) return;
+        if (!userCanAccessCall(userId, call)) return;
 
-        const targetId = call.callerId === userId ? call.calleeId : call.callerId;
+        const targetId = getPeerUserId(userId, call);
+        if (!targetId) return;
         connectionManager.sendTo(targetId, {
           type: 'webrtc:offer',
           payload: { callId, offer: sdpOffer },
-        });
+        }, { queueIfOffline: true });
+        break;
+      }
+
+      case 'webrtc:renegotiate': {
+        const { callId, offer: sdpOffer } = payload as unknown as {
+          callId: string;
+          offer: { type: 'offer' | 'answer'; sdp: string };
+        };
+        const call = activeCalls.get(callId);
+        if (!call) return;
+        if (!userCanAccessCall(userId, call)) return;
+
+        const targetId = getPeerUserId(userId, call);
+        if (!targetId) return;
+        connectionManager.sendTo(targetId, {
+          type: 'webrtc:renegotiate',
+          payload: { callId, offer: sdpOffer },
+        }, { queueIfOffline: true });
         break;
       }
 
@@ -268,12 +353,14 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
         };
         const call = activeCalls.get(callId);
         if (!call) return;
+        if (!userCanAccessCall(userId, call)) return;
 
-        const targetId = call.callerId === userId ? call.calleeId : call.callerId;
+        const targetId = getPeerUserId(userId, call);
+        if (!targetId) return;
         connectionManager.sendTo(targetId, {
           type: 'webrtc:answer',
           payload: { callId, answer: sdpAnswer },
-        });
+        }, { queueIfOffline: true });
         break;
       }
 
@@ -281,12 +368,14 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
         const { callId, candidate } = payload as unknown as ICECandidatePayload;
         const call = activeCalls.get(callId);
         if (!call) return;
+        if (!userCanAccessCall(userId, call)) return;
 
-        const targetId = call.callerId === userId ? call.calleeId : call.callerId;
+        const targetId = getPeerUserId(userId, call);
+        if (!targetId) return;
         connectionManager.sendTo(targetId, {
           type: 'webrtc:ice-candidate',
           payload: { callId, candidate },
-        });
+        }, { queueIfOffline: true });
         break;
       }
 
@@ -295,12 +384,14 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
         const { callId, enabled } = payload as unknown as { callId: string; enabled: boolean };
         const call = activeCalls.get(callId);
         if (!call) return;
+        if (!userCanAccessCall(userId, call)) return;
 
-        const targetId = call.callerId === userId ? call.calleeId : call.callerId;
+        const targetId = getPeerUserId(userId, call);
+        if (!targetId) return;
         connectionManager.sendTo(targetId, {
           type,
           payload: { callId, userId, enabled },
-        });
+        }, { queueIfOffline: true });
         break;
       }
 

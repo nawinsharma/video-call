@@ -53,8 +53,8 @@ export async function sendCallNotification(params: {
       callerName: params.callerName,
       callType: params.callType,
     },
-    sound: 'ringtone.mp3',
+    sound: 'incoming.mp3',
     priority: 'high',
-    channelId: 'calls',
+    channelId: 'incoming-calls',
   });
 }

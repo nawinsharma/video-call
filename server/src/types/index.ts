@@ -18,6 +18,8 @@ export type WSEventType =
   | 'webrtc:answer'
   | 'webrtc:ice-candidate'
   | 'webrtc:renegotiate'
+  | 'connection:ping'
+  | 'connection:pong'
   | 'user:online'
   | 'user:offline'
   | 'call:incoming'

@@ -8,8 +8,17 @@ interface ConnectedClient {
   };
 }
 
+interface QueuedMessage {
+  message: SocketMessage;
+  expiresAt: number;
+}
+
+const PENDING_MESSAGE_TTL_MS = 2 * 60 * 1000;
+const MAX_PENDING_MESSAGES_PER_USER = 100;
+
 class ConnectionManager {
   private connections = new Map<string, ConnectedClient>();
+  private pendingMessages = new Map<string, QueuedMessage[]>();
 
   add(
     userId: string,
@@ -19,6 +28,7 @@ class ConnectionManager {
     }
   ) {
     this.connections.set(userId, { userId, username, ws });
+    this.flushPending(userId);
   }
 
   remove(
@@ -43,15 +53,19 @@ class ConnectionManager {
     return this.connections.has(userId);
   }
 
-  sendTo(userId: string, message: SocketMessage): boolean {
+  sendTo(userId: string, message: SocketMessage, options: { queueIfOffline?: boolean } = {}): boolean {
     const client = this.connections.get(userId);
-    if (!client) return false;
+    if (!client) {
+      if (options.queueIfOffline) this.queueFor(userId, message);
+      return false;
+    }
 
     try {
       client.ws.send(JSON.stringify(message));
       return true;
     } catch {
       this.remove(userId, client.ws);
+      if (options.queueIfOffline) this.queueFor(userId, message);
       return false;
     }
   }
@@ -73,6 +87,29 @@ class ConnectionManager {
 
   getCount(): number {
     return this.connections.size;
+  }
+
+  private queueFor(userId: string, message: SocketMessage) {
+    const now = Date.now();
+    const queue = (this.pendingMessages.get(userId) ?? []).filter((entry) => entry.expiresAt > now);
+    queue.push({ message, expiresAt: now + PENDING_MESSAGE_TTL_MS });
+    if (queue.length > MAX_PENDING_MESSAGES_PER_USER) {
+      queue.splice(0, queue.length - MAX_PENDING_MESSAGES_PER_USER);
+    }
+    this.pendingMessages.set(userId, queue);
+  }
+
+  private flushPending(userId: string) {
+    const queue = this.pendingMessages.get(userId);
+    if (!queue?.length) return;
+
+    this.pendingMessages.delete(userId);
+    const now = Date.now();
+
+    for (const entry of queue) {
+      if (entry.expiresAt <= now) continue;
+      this.sendTo(userId, entry.message);
+    }
   }
 }
 
