@@ -7,9 +7,10 @@ import {
   StyleSheet,
   TextInput,
   RefreshControl,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../src/stores/authStore';
@@ -17,13 +18,25 @@ import { useCallStore } from '../../src/stores/callStore';
 import { signalingClient } from '../../src/services/websocket/signalingClient';
 import type { User } from '../../src/types';
 import * as Haptics from 'expo-haptics';
-import { useUsersQuery } from '../../src/hooks/queries/useUsersQuery';
+import {
+  useAddContactMutation,
+  useUserSearchQuery,
+  useUsersQuery,
+} from '../../src/hooks/queries/useUsersQuery';
+import { AppTheme, useAppTheme } from '../../src/theme/colors';
 
 export default function HomeScreen() {
+  const theme = useAppTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const authStore = useAuthStore();
   const callStore = useCallStore();
   const [searchQuery, setSearchQuery] = useState('');
-  const { data: users = [], isRefetching, refetch } = useUsersQuery();
+  const [error, setError] = useState('');
+  const normalizedSearch = searchQuery.trim();
+  const isSearching = normalizedSearch.length >= 2;
+  const { data: contacts = [], isRefetching, refetch } = useUsersQuery();
+  const { data: searchResults = [], isFetching: isSearchFetching } = useUserSearchQuery(searchQuery);
+  const addContactMutation = useAddContactMutation();
 
   const handleCall = (user: User, type: 'audio' | 'video') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -36,180 +49,279 @@ export default function HomeScreen() {
     router.push('/call/outgoing');
   };
 
-  const handleLogout = async () => {
-    signalingClient.disconnect();
-    await authStore.logout();
-    router.replace('/(auth)/login');
+  const handleAddContact = async (user: User) => {
+    setError('');
+    try {
+      await addContactMutation.mutateAsync(user.id);
+      setSearchQuery('');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Could not add contact.');
+    }
   };
 
-  const filteredUsers = useMemo(
-    () =>
-      users.filter(
-        (u) =>
-          u.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          u.displayName.toLowerCase().includes(searchQuery.toLowerCase())
-      ),
-    [users, searchQuery]
-  );
+  const handleLogout = () => {
+    Alert.alert('Sign out?', 'You will stop receiving calls on this device until you sign in again.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: async () => {
+          signalingClient.disconnect();
+          await authStore.logout();
+          router.replace('/(auth)/login');
+        },
+      },
+    ]);
+  };
 
-  const renderUser = ({ item, index }: { item: User; index: number }) => (
-    <Animated.View entering={FadeInDown.delay(index * 50).springify()}>
-      <View style={styles.userCard}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {item.displayName.charAt(0).toUpperCase()}
-          </Text>
-          {item.isOnline && <View style={styles.onlineIndicator} />}
-        </View>
+  const visibleUsers = isSearching ? searchResults : contacts;
+  const emptyIcon = isSearching ? 'search' : 'person-add';
+  const emptyText = isSearching
+    ? isSearchFetching
+      ? 'Searching...'
+      : 'No matching user found'
+    : 'Add contacts by searching their email or username';
 
-        <View style={styles.userInfo}>
-          <Text style={styles.userName}>{item.displayName}</Text>
-          <Text style={styles.userStatus}>
-            {item.isOnline ? 'Online' : 'Offline'}
-          </Text>
-        </View>
+  const renderUser = ({ item, index }: { item: User; index: number }) => {
+    const canCall = !isSearching || item.isContact;
 
-        <View style={styles.callButtons}>
-          <Pressable
-            style={styles.callButton}
-            onPress={() => handleCall(item, 'audio')}
-          >
-            <Ionicons name="call" size={20} color="#34C759" />
-          </Pressable>
-          <Pressable
-            style={styles.callButton}
-            onPress={() => handleCall(item, 'video')}
-          >
-            <Ionicons name="videocam" size={20} color="#6C63FF" />
-          </Pressable>
+    return (
+      <Animated.View entering={FadeInDown.delay(index * 35).springify()}>
+        <View style={styles.userCard}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{item.displayName.charAt(0).toUpperCase()}</Text>
+            {item.isOnline && <View style={styles.onlineIndicator} />}
+          </View>
+
+          <View style={styles.userInfo}>
+            <Text style={styles.userName} numberOfLines={1}>{item.displayName}</Text>
+            <Text style={styles.userStatus} numberOfLines={1}>
+              @{item.username}{item.email ? `  ·  ${item.email}` : ''}
+            </Text>
+          </View>
+
+          {canCall ? (
+            <View style={styles.callButtons}>
+              <IconButton
+                icon="call"
+                color={theme.colors.success}
+                onPress={() => handleCall(item, 'audio')}
+                styles={styles}
+              />
+              <IconButton
+                icon="videocam"
+                color={theme.colors.accent}
+                onPress={() => handleCall(item, 'video')}
+                styles={styles}
+              />
+            </View>
+          ) : (
+            <Pressable
+              style={({ pressed }) => [styles.addButton, pressed ? styles.pressed : null]}
+              onPress={() => void handleAddContact(item)}
+              disabled={addContactMutation.isPending}
+            >
+              {addContactMutation.isPending ? (
+                <ActivityIndicator color={theme.colors.accentText} />
+              ) : (
+                <Ionicons name="person-add" size={20} color={theme.colors.accentText} />
+              )}
+            </Pressable>
+          )}
         </View>
-      </View>
-    </Animated.View>
-  );
+      </Animated.View>
+    );
+  };
 
   return (
-    <LinearGradient colors={['#0A0A0F', '#1A1A2E']} style={styles.gradient}>
+    <View style={styles.screen}>
       <Animated.View entering={FadeIn} style={styles.container}>
         <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Hello,</Text>
-            <Text style={styles.displayName}>{authStore.user?.displayName}</Text>
+          <View style={styles.headerText}>
+            <Text style={styles.greeting}>Signed in as</Text>
+            <Text style={styles.displayName} numberOfLines={1}>{authStore.user?.displayName}</Text>
           </View>
           <Pressable onPress={handleLogout} style={styles.logoutButton}>
-            <Ionicons name="log-out-outline" size={24} color="rgba(255,255,255,0.6)" />
+            <Ionicons name="log-out-outline" size={24} color={theme.colors.muted} />
           </Pressable>
         </View>
 
         <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="rgba(255,255,255,0.4)" />
+          <Ionicons name="search" size={20} color={theme.colors.subtle} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search contacts..."
-            placeholderTextColor="rgba(255,255,255,0.3)"
+            placeholder="Search email or username"
+            placeholderTextColor={theme.colors.subtle}
             value={searchQuery}
             onChangeText={setSearchQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+            selectionColor={theme.colors.accent}
           />
+          {isSearchFetching && <ActivityIndicator color={theme.colors.accent} />}
         </View>
 
-        <Text style={styles.sectionTitle}>Contacts</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>{isSearching ? 'Search Results' : 'Contacts'}</Text>
+          {isSearching ? (
+            <Pressable onPress={() => setSearchQuery('')} style={styles.clearButton}>
+              <Text style={styles.clearText}>Clear</Text>
+            </Pressable>
+          ) : null}
+        </View>
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <FlatList
-          data={filteredUsers}
+          data={visibleUsers}
           keyExtractor={(item) => item.id}
           renderItem={renderUser}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor="#6C63FF" />
+            <RefreshControl
+              refreshing={isRefetching}
+              onRefresh={refetch}
+              tintColor={theme.colors.accent}
+            />
           }
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Ionicons name="people-outline" size={48} color="rgba(255,255,255,0.2)" />
-              <Text style={styles.emptyText}>No contacts found</Text>
+              <Ionicons name={emptyIcon} size={46} color={theme.colors.subtle} />
+              <Text style={styles.emptyText}>{emptyText}</Text>
             </View>
           }
         />
       </Animated.View>
-    </LinearGradient>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  gradient: { flex: 1 },
-  container: { flex: 1, paddingTop: 60 },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    marginBottom: 24,
-  },
-  greeting: { fontSize: 14, color: 'rgba(255,255,255,0.5)' },
-  displayName: { fontSize: 28, fontWeight: '700', color: 'white', letterSpacing: -0.5 },
-  logoutButton: { padding: 8 },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    marginHorizontal: 24,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    height: 48,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-  },
-  searchInput: { flex: 1, marginLeft: 12, fontSize: 16, color: 'white' },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: 'white',
-    paddingHorizontal: 24,
-    marginTop: 24,
-    marginBottom: 12,
-  },
-  list: { paddingHorizontal: 24, paddingBottom: 40 },
-  userCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    marginBottom: 8,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-  },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(108, 99, 255, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: { fontSize: 20, fontWeight: '600', color: '#6C63FF' },
-  onlineIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#34C759',
-    borderWidth: 2,
-    borderColor: '#0A0A0F',
-  },
-  userInfo: { flex: 1, marginLeft: 14 },
-  userName: { fontSize: 16, fontWeight: '600', color: 'white' },
-  userStatus: { fontSize: 13, color: 'rgba(255,255,255,0.4)', marginTop: 2 },
-  callButtons: { flexDirection: 'row', gap: 8 },
-  callButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  empty: { alignItems: 'center', paddingTop: 60, gap: 12 },
-  emptyText: { fontSize: 16, color: 'rgba(255,255,255,0.3)' },
-});
+function IconButton({
+  icon,
+  color,
+  onPress,
+  styles,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
+  onPress: () => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return (
+    <Pressable style={({ pressed }) => [styles.callButton, pressed ? styles.pressed : null]} onPress={onPress}>
+      <Ionicons name={icon} size={20} color={color} />
+    </Pressable>
+  );
+}
+
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: theme.colors.background },
+    container: { flex: 1, paddingTop: 58, paddingHorizontal: 20 },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 24,
+      gap: 16,
+    },
+    headerText: { flex: 1 },
+    greeting: { fontSize: 15, color: theme.colors.muted },
+    displayName: { fontSize: 30, fontWeight: '800', color: theme.colors.text },
+    logoutButton: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: theme.colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    searchContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.colors.input,
+      borderRadius: 14,
+      paddingHorizontal: 16,
+      height: 54,
+      marginBottom: 20,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      gap: 10,
+    },
+    searchInput: { flex: 1, color: theme.colors.text, fontSize: 16 },
+    sectionHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 12,
+    },
+    sectionTitle: { fontSize: 18, fontWeight: '800', color: theme.colors.text },
+    clearButton: { paddingVertical: 8, paddingHorizontal: 10 },
+    clearText: { color: theme.colors.accent, fontWeight: '700' },
+    error: { color: theme.colors.danger, marginBottom: 10, textAlign: 'center' },
+    list: { paddingBottom: 30, flexGrow: 1 },
+    userCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.colors.surface,
+      borderRadius: 14,
+      padding: 14,
+      marginBottom: 10,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    avatar: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      backgroundColor: theme.colors.accentSoft,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+      position: 'relative',
+      borderWidth: 1,
+      borderColor: theme.colors.accent,
+    },
+    avatarText: { fontSize: 20, fontWeight: '800', color: theme.colors.accent },
+    onlineIndicator: {
+      position: 'absolute',
+      bottom: 2,
+      right: 2,
+      width: 13,
+      height: 13,
+      borderRadius: 7,
+      backgroundColor: theme.colors.success,
+      borderWidth: 2,
+      borderColor: theme.colors.surface,
+    },
+    userInfo: { flex: 1, minWidth: 0 },
+    userName: { fontSize: 17, fontWeight: '800', color: theme.colors.text },
+    userStatus: { fontSize: 13, color: theme.colors.muted, marginTop: 3 },
+    callButtons: { flexDirection: 'row', gap: 8, marginLeft: 8 },
+    callButton: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor: theme.colors.elevated,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    addButton: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: theme.colors.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginLeft: 8,
+    },
+    pressed: { opacity: 0.72 },
+    empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 12 },
+    emptyText: { color: theme.colors.muted, fontSize: 15, textAlign: 'center', lineHeight: 22 },
+  });
+}
