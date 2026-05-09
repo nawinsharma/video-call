@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
@@ -141,9 +142,13 @@ export default function LoginScreen() {
     >
       <Animated.View entering={FadeInUp.delay(100).springify()} style={styles.header}>
         <View style={styles.iconContainer}>
-          <Ionicons name="videocam" size={42} color={theme.colors.accent} />
+          <Image
+            source={require('../../assets/logo.jpeg')}
+            style={styles.logo}
+            resizeMode="cover"
+          />
         </View>
-        <Text style={styles.title}>VideoCall</Text>
+        <Text style={styles.title}>OneConnect</Text>
         <Text style={styles.subtitle}>
           {mode === 'login' ? 'Sign in with email or username' : 'Verify your email to get started'}
         </Text>
@@ -310,7 +315,9 @@ function createStyles(theme: AppTheme) {
       marginBottom: 16,
       borderWidth: 1,
       borderColor: theme.colors.accent,
+      overflow: 'hidden',
     },
+    logo: { width: '100%', height: '100%' },
     title: { fontSize: 32, fontWeight: '800', color: theme.colors.text },
     subtitle: { fontSize: 15, color: theme.colors.muted, marginTop: 6, textAlign: 'center' },
     form: { gap: 14 },

@@ -1,19 +1,21 @@
 {
   "expo": {
-    "name": "VideoCall",
-    "slug": "video-call",
+    "name": "OneConnect",
+    "slug": "oneconnect",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "scheme": "videocall",
+    "icon": "./assets/logo.jpeg",
+    "scheme": "oneconnect",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
+      "image": "./assets/logo.jpeg",
+      "resizeMode": "contain",
       "backgroundColor": "#0A0A0F"
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.videocall.app",
+      "bundleIdentifier": "com.oneconnect.app",
       "infoPlist": {
         "NSCameraUsageDescription": "This app needs camera access for video calls",
         "NSMicrophoneUsageDescription": "This app needs microphone access for audio/video calls",
@@ -26,9 +28,10 @@
     },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./assets/logo.jpeg",
         "backgroundColor": "#0A0A0F"
       },
-      "package": "com.videocall.app",
+      "package": "com.oneconnect.app",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
