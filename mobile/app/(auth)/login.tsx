@@ -241,18 +241,19 @@ export default function LoginScreen() {
 
         <Pressable
           style={({ pressed }) => [
-            styles.button,
+            styles.buttonOuter,
             pressed && !isLoading ? styles.buttonPressed : null,
-            isLoading ? styles.buttonDisabled : null,
           ]}
           onPress={handleSubmit}
           disabled={isLoading}
         >
-          {isLoading ? (
-            <ActivityIndicator color={theme.colors.accentText} />
-          ) : (
-            <Text style={styles.buttonText}>{primaryLabel}</Text>
-          )}
+          <View style={[styles.buttonInner, isLoading ? styles.buttonDisabled : null]}>
+            {isLoading ? (
+              <ActivityIndicator color={theme.colors.accentText} />
+            ) : (
+              <Text style={styles.buttonText}>{primaryLabel}</Text>
+            )}
+          </View>
         </Pressable>
 
         {mode === 'register' && registerStep === 'otp' && (
@@ -347,13 +348,21 @@ function createStyles(theme: AppTheme) {
     },
     noticeText: { color: theme.colors.text, fontSize: 13, flex: 1 },
     error: { color: theme.colors.danger, fontSize: 14, textAlign: 'center' },
-    button: {
+    // Inner View owns background — some Android builds skip painting bg on Pressable.
+    buttonOuter: {
+      marginTop: 6,
+      borderRadius: 14,
+      overflow: 'hidden',
+    },
+    buttonInner: {
       height: 56,
       alignItems: 'center',
       justifyContent: 'center',
       borderRadius: 14,
-      marginTop: 6,
       backgroundColor: theme.colors.accent,
+      ...(theme.isDark
+        ? { borderWidth: 1, borderColor: 'rgba(255, 245, 220, 0.35)' }
+        : {}),
     },
     buttonPressed: { opacity: 0.86 },
     buttonDisabled: { opacity: 0.7 },

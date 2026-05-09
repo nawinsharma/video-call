@@ -110,19 +110,21 @@ export default function ActiveCallScreen() {
               style={styles.pip}
               onPress={() => handleSwapVideo('local')}
             >
-              <VideoSurface
-                owner="local"
-                stream={localStream}
-                visible={canShowLocalVideo}
-                isFrontCamera={callStore.isFrontCamera}
-                username="You"
-                muted={callStore.isMuted}
-                cameraOff={callStore.isCameraOff}
-                styles={styles}
-                theme={theme}
-                zOrder={1}
-                compact
-              />
+              <View style={styles.pipInner}>
+                <VideoSurface
+                  owner="local"
+                  stream={localStream}
+                  visible={canShowLocalVideo}
+                  isFrontCamera={callStore.isFrontCamera}
+                  username="You"
+                  muted={callStore.isMuted}
+                  cameraOff={callStore.isCameraOff}
+                  styles={styles}
+                  theme={theme}
+                  zOrder={1}
+                  compact
+                />
+              </View>
             </Pressable>
           ) : null}
 
@@ -131,19 +133,21 @@ export default function ActiveCallScreen() {
               style={styles.pip}
               onPress={() => handleSwapVideo('remote')}
             >
-              <VideoSurface
-                owner="remote"
-                stream={remoteStream}
-                visible={canShowRemoteVideo}
-                isFrontCamera={false}
-                username={callStore.remoteUsername}
-                muted={!callStore.remoteAudioEnabled}
-                cameraOff={!callStore.remoteVideoEnabled}
-                styles={styles}
-                theme={theme}
-                zOrder={1}
-                compact
-              />
+              <View style={styles.pipInner}>
+                <VideoSurface
+                  owner="remote"
+                  stream={remoteStream}
+                  visible={canShowRemoteVideo}
+                  isFrontCamera={false}
+                  username={callStore.remoteUsername}
+                  muted={!callStore.remoteAudioEnabled}
+                  cameraOff={!callStore.remoteVideoEnabled}
+                  styles={styles}
+                  theme={theme}
+                  zOrder={1}
+                  compact
+                />
+              </View>
             </Pressable>
           ) : null}
         </View>
@@ -226,7 +230,7 @@ function VideoSurface({
 }) {
   if (visible && stream) {
     return (
-      <View style={styles.surface}>
+      <View style={[styles.surface, compact && styles.surfacePip]}>
         <RTCView
           streamURL={stream.toURL()}
           style={styles.video}
@@ -249,7 +253,7 @@ function VideoSurface({
   }
 
   return (
-    <View style={[styles.surface, styles.videoPlaceholder]}>
+    <View style={[styles.surface, styles.videoPlaceholder, compact && styles.surfacePip]}>
       <View style={compact ? styles.compactAvatar : styles.avatar}>
         <Text style={compact ? styles.compactAvatarText : styles.avatarText}>
           {(owner === 'local' ? 'Y' : username?.charAt(0) || '?').toUpperCase()}
@@ -297,12 +301,14 @@ function createStyles(theme: AppTheme) {
     container: { flex: 1, backgroundColor: theme.colors.background },
     videoStage: { flex: 1, backgroundColor: '#000' },
     surface: { flex: 1, overflow: 'hidden', backgroundColor: theme.colors.background },
+    surfacePip: { backgroundColor: '#000' },
     video: { flex: 1 },
     videoPlaceholder: {
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: theme.colors.background,
     },
+    // Single ring: border lives on inner clip so it is not doubled with video/surface edges.
     pip: {
       position: 'absolute',
       top: 74,
@@ -310,16 +316,21 @@ function createStyles(theme: AppTheme) {
       width: 118,
       height: 164,
       borderRadius: 18,
-      overflow: 'hidden',
-      borderWidth: 2,
-      borderColor: theme.colors.accent,
-      backgroundColor: theme.colors.surface,
+      backgroundColor: 'transparent',
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.35,
       shadowRadius: 14,
       elevation: 12,
       zIndex: 20,
+    },
+    pipInner: {
+      flex: 1,
+      borderRadius: 18,
+      overflow: 'hidden',
+      borderWidth: 2,
+      borderColor: theme.colors.accent,
+      backgroundColor: '#000',
     },
     avatar: {
       width: 136,
@@ -409,12 +420,20 @@ function createStyles(theme: AppTheme) {
     },
     topGradient: {
       paddingTop: 58,
-      paddingBottom: 38,
+      paddingBottom: 12,
       paddingHorizontal: 24,
-      backgroundColor: 'rgba(0, 0, 0, 0.32)',
+      backgroundColor: 'transparent',
     },
     topInfo: { alignItems: 'center' },
-    remoteName: { fontSize: 22, fontWeight: '800', color: '#ffffff', maxWidth: 260 },
+    remoteName: {
+      fontSize: 22,
+      fontWeight: '800',
+      color: '#ffffff',
+      maxWidth: 260,
+      textShadowColor: 'rgba(0, 0, 0, 0.55)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 6,
+    },
     reconnectBanner: {
       flexDirection: 'row',
       alignItems: 'center',
