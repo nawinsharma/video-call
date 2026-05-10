@@ -10,6 +10,7 @@ import Animated, {
 import { RTCView } from 'react-native-webrtc';
 import type { MediaStream } from 'react-native-webrtc';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCallStore } from '../../src/stores/callStore';
 import { useCall } from '../../src/hooks/useCall';
 import { CallControls } from '../../src/components/call/CallControls';
@@ -22,6 +23,7 @@ type VideoOwner = 'remote' | 'local';
 
 export default function ActiveCallScreen() {
   const theme = useAppTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const callStore = useCallStore();
   const {
@@ -32,6 +34,7 @@ export default function ActiveCallScreen() {
     toggleCamera,
     cycleAudioOutput,
     flipCamera,
+    toggleScreenShare,
   } = useCall();
 
   const [showControls, setShowControls] = useState(true);
@@ -40,7 +43,8 @@ export default function ActiveCallScreen() {
 
   const isVideoCall = callStore.callType === 'video';
   const isActive = callStore.status === 'active';
-  const canShowLocalVideo = isVideoCall && Boolean(localStream) && !callStore.isCameraOff;
+  const canShowLocalVideo =
+    isVideoCall && Boolean(localStream) && (!callStore.isCameraOff || callStore.isScreenSharing);
   const canShowRemoteVideo = isVideoCall && Boolean(remoteStream) && callStore.remoteVideoEnabled;
   const secondaryVideo: VideoOwner = primaryVideo === 'remote' ? 'local' : 'remote';
 
@@ -115,6 +119,11 @@ export default function ActiveCallScreen() {
                 ? !callStore.remoteVideoEnabled
                 : callStore.isCameraOff
             }
+            screenSharing={
+              primaryVideo === 'remote'
+                ? callStore.remoteScreenSharing
+                : callStore.isScreenSharing
+            }
             styles={styles}
             theme={theme}
             zOrder={0}
@@ -134,6 +143,7 @@ export default function ActiveCallScreen() {
                   username="You"
                   muted={callStore.isMuted}
                   cameraOff={callStore.isCameraOff}
+                  screenSharing={callStore.isScreenSharing}
                   styles={styles}
                   theme={theme}
                   zOrder={1}
@@ -157,6 +167,7 @@ export default function ActiveCallScreen() {
                   username={callStore.remoteUsername}
                   muted={!callStore.remoteAudioEnabled}
                   cameraOff={!callStore.remoteVideoEnabled}
+                  screenSharing={callStore.remoteScreenSharing}
                   styles={styles}
                   theme={theme}
                   zOrder={1}
@@ -175,6 +186,20 @@ export default function ActiveCallScreen() {
           styles={styles}
         />
       )}
+
+      <Animated.View style={[styles.minimizeWrap, { top: insets.top + 8 }, controlsStyle]}>
+        <Pressable
+          onPress={(event) => {
+            event.stopPropagation();
+            handleMinimize();
+          }}
+          style={({ pressed }) => [styles.minimizeButton, pressed ? styles.controlPressed : null]}
+          accessibilityRole="button"
+          accessibilityLabel="Minimize call"
+        >
+          <Ionicons name="chevron-down" size={22} color="#ffffff" />
+        </Pressable>
+      </Animated.View>
 
       <Animated.View style={[styles.topOverlay, controlsStyle]}>
         <View style={styles.topGradient}>
@@ -200,12 +225,13 @@ export default function ActiveCallScreen() {
           isCameraOff={callStore.isCameraOff}
           audioOutput={callStore.audioOutput}
           isVideoCall={isVideoCall}
+          isScreenSharing={callStore.isScreenSharing}
           onToggleMute={toggleMute}
           onToggleCamera={toggleCamera}
           onFlipCamera={flipCamera}
+          onToggleScreenShare={toggleScreenShare}
           onEndCall={endCall}
           onCycleAudioOutput={cycleAudioOutput}
-          onMinimize={handleMinimize}
         />
       </Animated.View>
 
@@ -227,6 +253,7 @@ function VideoSurface({
   username,
   muted,
   cameraOff,
+  screenSharing,
   styles,
   theme,
   zOrder,
@@ -239,6 +266,7 @@ function VideoSurface({
   username: string | null;
   muted: boolean;
   cameraOff: boolean;
+  screenSharing: boolean;
   styles: ReturnType<typeof createStyles>;
   theme: AppTheme;
   zOrder: number;
@@ -250,18 +278,28 @@ function VideoSurface({
         <RTCView
           streamURL={stream.toURL()}
           style={styles.video}
-          objectFit="cover"
-          mirror={isFrontCamera}
+          objectFit={screenSharing ? 'contain' : 'cover'}
+          mirror={!screenSharing && isFrontCamera}
           zOrder={zOrder}
+          iosPIP={
+            owner === 'remote' && !compact
+              ? {
+                  enabled: true,
+                  startAutomatically: true,
+                  stopAutomatically: true,
+                  preferredSize: { width: 9, height: 16 },
+                }
+              : undefined
+          }
         />
         <View style={compact ? styles.compactBadge : styles.videoBadge}>
           <Ionicons
-            name={muted ? 'mic-off' : owner === 'local' ? 'person' : 'person-circle'}
+            name={screenSharing ? 'desktop' : muted ? 'mic-off' : owner === 'local' ? 'person' : 'person-circle'}
             size={compact ? 13 : 15}
             color={theme.colors.accent}
           />
           <Text style={compact ? styles.compactBadgeText : styles.videoBadgeText} numberOfLines={1}>
-            {owner === 'local' ? 'You' : username}
+            {screenSharing ? (owner === 'local' ? 'Your screen' : `${username || 'Contact'}'s screen`) : owner === 'local' ? 'You' : username}
           </Text>
         </View>
       </View>
@@ -277,7 +315,7 @@ function VideoSurface({
       </View>
       {!compact ? (
         <Text style={styles.placeholderText}>
-          {cameraOff ? 'Camera off' : 'Connecting video...'}
+          {screenSharing ? 'Starting screen share...' : cameraOff ? 'Camera off' : 'Connecting video...'}
         </Text>
       ) : null}
     </View>
@@ -441,6 +479,22 @@ function createStyles(theme: AppTheme) {
       backgroundColor: 'transparent',
     },
     topInfo: { alignItems: 'center' },
+    minimizeWrap: {
+      position: 'absolute',
+      left: 12,
+      zIndex: 30,
+    },
+    minimizeButton: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(0, 0, 0, 0.44)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.18)',
+    },
+    controlPressed: { opacity: 0.72 },
     remoteName: {
       fontSize: 22,
       fontWeight: '800',

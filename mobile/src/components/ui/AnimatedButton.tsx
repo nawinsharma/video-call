@@ -19,6 +19,8 @@ interface AnimatedButtonProps {
   isActive?: boolean;
   size?: number;
   disabled?: boolean;
+  accessibilityLabel?: string;
+  accessibilityState?: { disabled?: boolean; selected?: boolean; checked?: boolean };
 }
 
 export function AnimatedButton({
@@ -30,6 +32,8 @@ export function AnimatedButton({
   isActive = false,
   size = 56,
   disabled = false,
+  accessibilityLabel,
+  accessibilityState,
 }: AnimatedButtonProps) {
   const scale = useSharedValue(1);
 
@@ -57,8 +61,12 @@ export function AnimatedButton({
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled, ...accessibilityState }}
       style={[
         styles.button,
+        disabled ? styles.disabled : null,
         { width: size, height: size, borderRadius: size / 2 },
         animatedStyle,
         style,
@@ -75,5 +83,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  disabled: {
+    opacity: 0.45,
   },
 });

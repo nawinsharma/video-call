@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GlassmorphicView } from '../ui/GlassmorphicView';
 import { AnimatedButton } from '../ui/AnimatedButton';
@@ -12,17 +12,18 @@ interface CallControlsProps {
   isCameraOff: boolean;
   audioOutput: AudioOutput;
   isVideoCall: boolean;
+  isScreenSharing: boolean;
   onToggleMute: () => void;
   onToggleCamera: () => void;
   onFlipCamera: () => void;
+  onToggleScreenShare: () => void;
   onEndCall: () => void;
   onCycleAudioOutput: () => void;
-  onMinimize: () => void;
 }
 
-const AUDIO_OUTPUT_ICON: Record<AudioOutput, 'volume-high' | 'volume-mute' | 'bluetooth'> = {
+const AUDIO_OUTPUT_ICON: Record<AudioOutput, 'volume-high' | 'phone-portrait' | 'bluetooth'> = {
   speaker: 'volume-high',
-  earpiece: 'volume-mute',
+  earpiece: 'phone-portrait',
   bluetooth: 'bluetooth',
 };
 
@@ -31,19 +32,27 @@ export function CallControls({
   isCameraOff,
   audioOutput,
   isVideoCall,
+  isScreenSharing,
   onToggleMute,
   onToggleCamera,
   onFlipCamera,
+  onToggleScreenShare,
   onEndCall,
   onCycleAudioOutput,
-  onMinimize,
 }: CallControlsProps) {
   const theme = useAppTheme();
+  const { width } = useWindowDimensions();
+  const isNarrow = width < 370;
+  const controlSize = isNarrow ? 42 : 46;
+  const endSize = isNarrow ? 54 : 58;
+  const iconSize = isNarrow ? 21 : 22;
+  const audioActive = audioOutput !== 'earpiece';
 
   return (
     <Animated.View entering={SlideInDown.springify().damping(18)} exiting={SlideOutDown}>
       <GlassmorphicView
         style={styles.container}
+        contentStyle={styles.glassContent}
         intensity={50}
         borderRadius={32}
         tint={theme.isDark ? 'dark' : 'light'}
@@ -54,10 +63,13 @@ export function CallControls({
             isActive={isMuted}
             activeColor={theme.colors.danger}
             inactiveColor={theme.colors.elevated}
+            size={controlSize}
+            accessibilityLabel={isMuted ? 'Unmute microphone' : 'Mute microphone'}
+            accessibilityState={{ selected: isMuted }}
           >
             <Ionicons
               name={isMuted ? 'mic-off' : 'mic'}
-              size={24}
+              size={iconSize}
               color={isMuted ? 'white' : theme.colors.text}
             />
           </AnimatedButton>
@@ -68,48 +80,80 @@ export function CallControls({
               isActive={isCameraOff}
               activeColor={theme.colors.danger}
               inactiveColor={theme.colors.elevated}
+              size={controlSize}
+              accessibilityLabel={isCameraOff ? 'Turn camera on' : 'Turn camera off'}
+              accessibilityState={{ selected: isCameraOff }}
             >
               <Ionicons
                 name={isCameraOff ? 'videocam-off' : 'videocam'}
-                size={24}
+                size={iconSize}
                 color={isCameraOff ? 'white' : theme.colors.text}
               />
             </AnimatedButton>
           )}
 
           {isVideoCall && (
-            <AnimatedButton onPress={onFlipCamera} inactiveColor={theme.colors.elevated}>
-              <Ionicons name="camera-reverse" size={24} color={theme.colors.text} />
+            <AnimatedButton
+              onPress={onFlipCamera}
+              inactiveColor={theme.colors.elevated}
+              size={controlSize}
+              disabled={isScreenSharing}
+              accessibilityLabel="Switch camera"
+            >
+              <Ionicons name="camera-reverse" size={iconSize} color={theme.colors.text} />
+            </AnimatedButton>
+          )}
+
+          {isVideoCall && (
+            <AnimatedButton
+              onPress={onToggleScreenShare}
+              isActive={isScreenSharing}
+              activeColor={theme.colors.accentSoft}
+              inactiveColor={theme.colors.elevated}
+              size={controlSize}
+              style={isScreenSharing ? { borderColor: theme.colors.accent } : undefined}
+              accessibilityLabel={isScreenSharing ? 'Stop screen sharing' : 'Share screen'}
+              accessibilityState={{ selected: isScreenSharing }}
+            >
+              <Ionicons
+                name={isScreenSharing ? 'stop-circle' : 'desktop-outline'}
+                size={iconSize}
+                color={isScreenSharing ? theme.colors.accent : theme.colors.text}
+              />
             </AnimatedButton>
           )}
 
           <AnimatedButton
             onPress={onCycleAudioOutput}
-            isActive={audioOutput === 'speaker' || audioOutput === 'bluetooth'}
-            activeColor={theme.colors.accent}
+            isActive={audioActive}
+            activeColor={theme.colors.elevated}
             inactiveColor={theme.colors.elevated}
+            size={controlSize}
+            style={audioActive ? { borderColor: theme.colors.accent } : undefined}
+            accessibilityLabel={
+              audioOutput === 'speaker'
+                ? 'Audio output speaker'
+                : audioOutput === 'bluetooth'
+                  ? 'Audio output bluetooth'
+                  : 'Audio output earpiece'
+            }
+            accessibilityState={{ selected: audioActive }}
           >
             <Ionicons
               name={AUDIO_OUTPUT_ICON[audioOutput]}
-              size={24}
-              color={audioOutput !== 'earpiece' ? theme.colors.accent : theme.colors.text}
+              size={iconSize}
+              color={audioActive ? theme.colors.accent : theme.colors.text}
             />
           </AnimatedButton>
 
           <AnimatedButton
-            onPress={onMinimize}
-            inactiveColor={theme.colors.elevated}
-          >
-            <Ionicons name="chevron-down" size={24} color={theme.colors.text} />
-          </AnimatedButton>
-
-          <AnimatedButton
             onPress={onEndCall}
-            size={64}
+            size={endSize}
             activeColor={theme.colors.danger}
             isActive={true}
+            accessibilityLabel="End call"
           >
-            <Ionicons name="call" size={28} color="white" style={{ transform: [{ rotate: '135deg' }] }} />
+            <Ionicons name="call" size={26} color="white" style={{ transform: [{ rotate: '135deg' }] }} />
           </AnimatedButton>
         </View>
       </GlassmorphicView>
@@ -119,13 +163,17 @@ export function CallControls({
 
 const styles = StyleSheet.create({
   container: {
-    marginHorizontal: 20,
-    marginBottom: 40,
+    alignSelf: 'center',
+    marginBottom: 30,
+  },
+  glassContent: {
+    paddingHorizontal: 10,
+    paddingVertical: 10,
   },
   controls: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-evenly',
-    paddingVertical: 4,
+    justifyContent: 'center',
+    gap: 7,
   },
 });

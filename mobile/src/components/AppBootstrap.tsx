@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { AppState } from 'react-native';
 import { router, useSegments } from 'expo-router';
 import { useAuthStore } from '../stores/authStore';
 import { useCallStore } from '../stores/callStore';
@@ -10,12 +11,18 @@ import {
 } from '../services/notifications/pushHandler';
 import { authService } from '../services/auth/authService';
 import { MinimizedCallWidget } from './call/MinimizedCallWidget';
+import { pictureInPicture } from '../services/native/pictureInPicture';
 
 export function AppBootstrap() {
   const { isAuthenticated } = useAuthStore();
   const callStatus = useCallStore((state) => state.status);
+  const callType = useCallStore((state) => state.callType);
   const isMinimized = useCallStore((state) => state.isMinimized);
   const segments = useSegments();
+  const canUseCallPip =
+    isAuthenticated &&
+    callType === 'video' &&
+    (callStatus === 'active' || callStatus === 'connecting' || callStatus === 'reconnecting');
 
   useSignaling();
   useCallEvents();
@@ -47,6 +54,20 @@ export function AppBootstrap() {
       isCancelled = true;
     };
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    pictureInPicture.setCallActive(canUseCallPip);
+    return () => pictureInPicture.setCallActive(false);
+  }, [canUseCallPip]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'background' || !canUseCallPip) return;
+      void pictureInPicture.enterPictureInPicture();
+    });
+
+    return () => subscription.remove();
+  }, [canUseCallPip]);
 
   useEffect(() => {
     if (!isAuthenticated) return;

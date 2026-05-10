@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, ViewProps } from 'react-native';
+import { View, StyleSheet, StyleProp, ViewProps, ViewStyle } from 'react-native';
 import { BlurView } from 'expo-blur';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
@@ -7,6 +7,7 @@ interface GlassmorphicViewProps extends ViewProps {
   intensity?: number;
   tint?: 'light' | 'dark' | 'default';
   borderRadius?: number;
+  contentStyle?: StyleProp<ViewStyle>;
 }
 
 export function GlassmorphicView({
@@ -14,6 +15,7 @@ export function GlassmorphicView({
   intensity = 40,
   tint = 'dark',
   borderRadius = 24,
+  contentStyle,
   style,
   ...props
 }: GlassmorphicViewProps) {
@@ -30,6 +32,7 @@ export function GlassmorphicView({
             styles.overlay,
             { borderRadius },
             tint === 'light' ? styles.lightOverlay : styles.darkOverlay,
+            contentStyle,
           ]}
         >
           {children}
