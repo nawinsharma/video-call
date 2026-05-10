@@ -168,8 +168,6 @@ class WebRTCManager {
       throw new Error('Peer connection is not initialized');
     }
 
-    await this.configureAudioForCall(isVideo);
-
     const constraints: {
       audio:
         | boolean
@@ -329,13 +327,25 @@ class WebRTCManager {
 
   async setSpeakerOn(enabled: boolean) {
     this.isSpeakerOn = enabled;
+    await this.applyAudioOutput(enabled ? 'speaker' : 'earpiece');
+  }
+
+  async setAudioOutput(output: 'earpiece' | 'speaker' | 'bluetooth') {
+    this.isSpeakerOn = output !== 'earpiece';
+    await this.applyAudioOutput(output);
+  }
+
+  private async applyAudioOutput(output: 'earpiece' | 'speaker' | 'bluetooth') {
+    // For 'bluetooth' and 'speaker', we do NOT force earpiece (letting the system
+    // route to the best available output — Bluetooth if connected, speaker otherwise).
+    // For 'earpiece', we force the earpiece route.
     await Audio.setAudioModeAsync({
       playsInSilentModeIOS: true,
       allowsRecordingIOS: true,
       interruptionModeIOS: InterruptionModeIOS.DoNotMix,
       interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
       shouldDuckAndroid: false,
-      playThroughEarpieceAndroid: !enabled,
+      playThroughEarpieceAndroid: output === 'earpiece',
       staysActiveInBackground: true,
     });
   }
@@ -388,20 +398,6 @@ class WebRTCManager {
     }
 
     return this.remoteStream;
-  }
-
-  private async configureAudioForCall(isVideoCall: boolean) {
-    this.audioModeGeneration++;
-    this.isSpeakerOn = isVideoCall;
-    await Audio.setAudioModeAsync({
-      playsInSilentModeIOS: true,
-      allowsRecordingIOS: true,
-      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
-      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
-      shouldDuckAndroid: false,
-      playThroughEarpieceAndroid: !isVideoCall,
-      staysActiveInBackground: true,
-    });
   }
 
   private scheduleAudioModeReset() {
