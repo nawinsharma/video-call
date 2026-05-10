@@ -40,7 +40,8 @@
         "ACCESS_NETWORK_STATE",
         "WAKE_LOCK",
         "VIBRATE",
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "USE_FULL_SCREEN_INTENT"
       ]
     },
     "plugins": [

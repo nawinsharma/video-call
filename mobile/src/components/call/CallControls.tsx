@@ -5,29 +5,38 @@ import { GlassmorphicView } from '../ui/GlassmorphicView';
 import { AnimatedButton } from '../ui/AnimatedButton';
 import Animated, { SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import { useAppTheme } from '../../theme/colors';
+import type { AudioOutput } from '../../stores/callStore';
 
 interface CallControlsProps {
   isMuted: boolean;
   isCameraOff: boolean;
-  isSpeakerOn: boolean;
+  audioOutput: AudioOutput;
   isVideoCall: boolean;
   onToggleMute: () => void;
   onToggleCamera: () => void;
   onFlipCamera: () => void;
   onEndCall: () => void;
-  onToggleSpeaker: () => void;
+  onCycleAudioOutput: () => void;
+  onMinimize: () => void;
 }
+
+const AUDIO_OUTPUT_ICON: Record<AudioOutput, 'volume-high' | 'volume-mute' | 'bluetooth'> = {
+  speaker: 'volume-high',
+  earpiece: 'volume-mute',
+  bluetooth: 'bluetooth',
+};
 
 export function CallControls({
   isMuted,
   isCameraOff,
-  isSpeakerOn,
+  audioOutput,
   isVideoCall,
   onToggleMute,
   onToggleCamera,
   onFlipCamera,
   onEndCall,
-  onToggleSpeaker,
+  onCycleAudioOutput,
+  onMinimize,
 }: CallControlsProps) {
   const theme = useAppTheme();
 
@@ -75,16 +84,23 @@ export function CallControls({
           )}
 
           <AnimatedButton
-            onPress={onToggleSpeaker}
-            isActive={!isSpeakerOn}
+            onPress={onCycleAudioOutput}
+            isActive={audioOutput === 'speaker' || audioOutput === 'bluetooth'}
             activeColor={theme.colors.accent}
             inactiveColor={theme.colors.elevated}
           >
             <Ionicons
-              name={isSpeakerOn ? 'volume-high' : 'volume-mute'}
+              name={AUDIO_OUTPUT_ICON[audioOutput]}
               size={24}
-              color={theme.colors.text}
+              color={audioOutput !== 'earpiece' ? theme.colors.accent : theme.colors.text}
             />
+          </AnimatedButton>
+
+          <AnimatedButton
+            onPress={onMinimize}
+            inactiveColor={theme.colors.elevated}
+          >
+            <Ionicons name="chevron-down" size={24} color={theme.colors.text} />
           </AnimatedButton>
 
           <AnimatedButton

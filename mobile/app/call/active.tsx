@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable, BackHandler } from 'react-native';
 import { router } from 'expo-router';
 import Animated, {
   FadeIn,
@@ -30,7 +30,7 @@ export default function ActiveCallScreen() {
     endCall,
     toggleMute,
     toggleCamera,
-    toggleSpeaker,
+    cycleAudioOutput,
     flipCamera,
   } = useCall();
 
@@ -52,6 +52,16 @@ export default function ActiveCallScreen() {
       }, 1000);
     }
   }, [callStore.status, callStore.reset]);
+
+  // Intercept hardware back button — minimize instead of ending the call.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleMinimize();
+      return true;
+    });
+    return () => sub.remove();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (primaryVideo === 'local' && !canShowLocalVideo) {
@@ -78,6 +88,11 @@ export default function ActiveCallScreen() {
   const handleSwapVideo = (owner: VideoOwner) => {
     setPrimaryVideo(owner);
     handleScreenTap();
+  };
+
+  const handleMinimize = () => {
+    callStore.minimize();
+    router.replace('/(main)');
   };
 
   const controlsStyle = useAnimatedStyle(() => ({
@@ -183,13 +198,14 @@ export default function ActiveCallScreen() {
         <CallControls
           isMuted={callStore.isMuted}
           isCameraOff={callStore.isCameraOff}
-          isSpeakerOn={callStore.isSpeakerOn}
+          audioOutput={callStore.audioOutput}
           isVideoCall={isVideoCall}
           onToggleMute={toggleMute}
           onToggleCamera={toggleCamera}
           onFlipCamera={flipCamera}
           onEndCall={endCall}
-          onToggleSpeaker={toggleSpeaker}
+          onCycleAudioOutput={cycleAudioOutput}
+          onMinimize={handleMinimize}
         />
       </Animated.View>
 

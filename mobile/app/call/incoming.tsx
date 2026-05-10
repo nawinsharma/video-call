@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import Animated, { FadeIn, FadeInDown, FadeInUp, ZoomIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,12 +9,18 @@ import { PulsingRing } from '../../src/components/animations/PulsingRing';
 import { AnimatedButton } from '../../src/components/ui/AnimatedButton';
 import { ringtoneService } from '../../src/services/calls/ringtoneService';
 import { AppTheme, useAppTheme } from '../../src/theme/colors';
+import { getPendingCallNotification } from '../../src/services/notifications/pushHandler';
 
 export default function IncomingCallScreen() {
   const theme = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const callStore = useCallStore();
   const { acceptCall, rejectCall } = useCall();
+
+  // When the app opens from a push notification, the callStore might still be empty
+  // (status === 'idle') while we wait for the WebSocket to deliver call:incoming.
+  // Show a loading state during that window instead of immediately going back.
+  const isWaitingForCallData = callStore.status === 'idle' && getPendingCallNotification() !== null;
 
   useEffect(() => {
     if (callStore.status === 'incoming') {
@@ -25,8 +31,11 @@ export default function IncomingCallScreen() {
 
     if (callStore.status === 'active' || callStore.status === 'connecting') {
       router.replace('/call/active');
+      return;
     }
-    if (callStore.status === 'ended' || callStore.status === 'idle') {
+
+    // Only navigate away when idle if we are NOT waiting for call data from the push.
+    if (callStore.status === 'ended' || (callStore.status === 'idle' && !isWaitingForCallData)) {
       callStore.reset();
       router.back();
     }
@@ -34,7 +43,7 @@ export default function IncomingCallScreen() {
     return () => {
       void ringtoneService.stop();
     };
-  }, [callStore.status]);
+  }, [callStore.status, isWaitingForCallData]);
 
   const handleAccept = () => {
     void ringtoneService.stop();
@@ -45,6 +54,18 @@ export default function IncomingCallScreen() {
     void ringtoneService.stop();
     rejectCall();
   };
+
+  if (isWaitingForCallData) {
+    const pending = getPendingCallNotification();
+    return (
+      <View style={[styles.screen, { alignItems: 'center', justifyContent: 'center', gap: 20 }]}>
+        <ActivityIndicator size="large" color={theme.colors.accent} />
+        <Text style={{ color: theme.colors.muted, fontSize: 15, fontWeight: '600' }}>
+          {pending?.callerName ? `${pending.callerName} is calling…` : 'Connecting…'}
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.screen}>

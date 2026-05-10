@@ -1,10 +1,12 @@
 import React from 'react';
 import { Text, StyleSheet } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
+import { useAppTheme } from '../../theme/colors';
 
 interface CallTimerProps {
   duration: number;
   status: string;
+  compact?: boolean;
 }
 
 function formatDuration(seconds: number): string {
@@ -18,7 +20,8 @@ function formatDuration(seconds: number): string {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
-export function CallTimer({ duration, status }: CallTimerProps) {
+export function CallTimer({ duration, status, compact = false }: CallTimerProps) {
+  const theme = useAppTheme();
   const getStatusText = () => {
     switch (status) {
       case 'outgoing':
@@ -37,6 +40,14 @@ export function CallTimer({ duration, status }: CallTimerProps) {
         return '';
     }
   };
+
+  if (compact) {
+    return (
+      <Text style={[styles.timerCompact, { color: theme.colors.success }]}>
+        {getStatusText()}
+      </Text>
+    );
+  }
 
   return (
     <Animated.View entering={FadeIn} style={styles.container}>
@@ -58,5 +69,10 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.55)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 6,
+  },
+  timerCompact: {
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
 });

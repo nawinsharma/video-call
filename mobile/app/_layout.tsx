@@ -4,7 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StyleSheet } from 'react-native';
-import { AppBootstrap } from '../src/components/AppBootstrap';
+import { AppBootstrap, MinimizedCallOverlay } from '../src/components/AppBootstrap';
 import { useAppTheme } from '../src/theme/colors';
 
 const queryClient = new QueryClient({
@@ -35,6 +35,7 @@ export default function RootLayout() {
             options={{ gestureEnabled: false, animation: 'fade' }}
           />
         </Stack>
+        <MinimizedCallOverlay />
       </QueryClientProvider>
     </GestureHandlerRootView>
   );
