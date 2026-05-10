@@ -38,6 +38,8 @@
         "MODIFY_AUDIO_SETTINGS",
         "INTERNET",
         "ACCESS_NETWORK_STATE",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MEDIA_PROJECTION",
         "WAKE_LOCK",
         "VIBRATE",
         "POST_NOTIFICATIONS",
@@ -47,6 +49,7 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      "./plugins/withAndroidVideoCallPip",
       [
         "expo-notifications",
         {
