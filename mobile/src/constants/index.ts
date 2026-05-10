@@ -29,6 +29,7 @@ export const WS_EVENTS = {
   USER_OFFLINE: 'user:offline',
   MEDIA_TOGGLE_AUDIO: 'media:toggle-audio',
   MEDIA_TOGGLE_VIDEO: 'media:toggle-video',
+  MEDIA_SCREEN_SHARE: 'media:screen-share',
 } as const;
 
 export const CALL_TIMEOUT_MS = 45000;

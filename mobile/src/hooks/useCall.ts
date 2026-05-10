@@ -83,6 +83,26 @@ function sendCallEnded(callId: string | null) {
   signalingClient.send('call:end', { callId }, { queueIfDisconnected: true });
 }
 
+function publishLocalScreenShareState(enabled: boolean) {
+  const state = useCallStore.getState();
+  if (state.isScreenSharing === enabled) return;
+
+  state.setScreenSharing(enabled);
+
+  if (!state.callId || state.callId.startsWith('temp_')) return;
+
+  signalingClient.send(
+    'media:screen-share',
+    { callId: state.callId, enabled },
+    { queueIfDisconnected: true }
+  );
+  signalingClient.send(
+    'media:toggle-video',
+    { callId: state.callId, enabled: enabled || !state.isCameraOff },
+    { queueIfDisconnected: true }
+  );
+}
+
 async function sendIceRestart(reason: string) {
   const { callId, role, status } = useCallStore.getState();
   if (!callId || callId.startsWith('temp_') || role !== 'caller') return;
@@ -318,6 +338,21 @@ export function useCallEvents() {
         const { remoteUserId } = useCallStore.getState();
         if (!userId || userId !== remoteUserId || typeof enabled !== 'boolean') return;
         useCallStore.getState().setRemoteVideoEnabled(enabled);
+        if (!enabled) {
+          useCallStore.getState().setRemoteScreenSharing(false);
+        }
+      })
+    );
+
+    unsubs.push(
+      signalingClient.on(WS_EVENTS.MEDIA_SCREEN_SHARE, (msg) => {
+        const { userId, enabled } = msg.payload as { userId?: string; enabled?: boolean };
+        const { remoteUserId } = useCallStore.getState();
+        if (!userId || userId !== remoteUserId || typeof enabled !== 'boolean') return;
+        useCallStore.getState().setRemoteScreenSharing(enabled);
+        if (enabled) {
+          useCallStore.getState().setRemoteVideoEnabled(true);
+        }
       })
     );
 
@@ -334,6 +369,7 @@ export function useCall() {
     const removeCallbacks = webrtcManager.addCallbacks({
       onRemoteStream: (stream) => setRemoteStream(stream),
       onLocalStream: (stream) => setLocalStream(stream),
+      onLocalScreenShareChange: (enabled) => publishLocalScreenShareState(enabled),
       onConnectionStateChange: (state) => {
         if (state === 'connected') {
           clearConnectionFailureTimer();
@@ -409,6 +445,7 @@ export function useCall() {
 
       const iceServers = await fetchIceServers(useCallStore.getState().iceServers);
       await webrtcManager.initialize(iceServers);
+      await webrtcManager.setAudioOutput(callType === 'video' ? 'speaker' : 'earpiece');
       await webrtcManager.startLocalStream(callType === 'video');
 
       const tempCallId = `temp_${Date.now()}`;
@@ -468,6 +505,7 @@ export function useCall() {
 
       const iceServers = await fetchIceServers(currentCall.iceServers);
       await webrtcManager.initialize(iceServers);
+      await webrtcManager.setAudioOutput(currentCall.callType === 'video' ? 'speaker' : 'earpiece');
       await webrtcManager.startLocalStream(currentCall.callType === 'video');
 
       // The offer should have been received with the incoming call
@@ -535,12 +573,15 @@ export function useCall() {
 
   const toggleCamera = useCallback(() => {
     const nextCameraOff = !useCallStore.getState().isCameraOff;
+    const isScreenSharing = useCallStore.getState().isScreenSharing;
     callStore.toggleCamera();
     webrtcManager.toggleVideo(!nextCameraOff);
-    signalingClient.send('media:toggle-video', {
-      callId: callStore.callId,
-      enabled: !nextCameraOff,
-    }, { queueIfDisconnected: true });
+    if (!isScreenSharing) {
+      signalingClient.send('media:toggle-video', {
+        callId: callStore.callId,
+        enabled: !nextCameraOff,
+      }, { queueIfDisconnected: true });
+    }
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [callStore]);
 
@@ -552,12 +593,33 @@ export function useCall() {
   }, [callStore]);
 
   const flipCamera = useCallback(async () => {
+    if (useCallStore.getState().isScreenSharing) return;
+
     const switched = await webrtcManager.switchCamera();
     if (switched) {
       callStore.flipCamera();
     }
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [callStore]);
+
+  const toggleScreenShare = useCallback(async () => {
+    const { isScreenSharing, isCameraOff } = useCallStore.getState();
+
+    try {
+      if (isScreenSharing) {
+        await webrtcManager.stopScreenShare(!isCameraOff);
+      } else {
+        await webrtcManager.startScreenShare();
+      }
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (error) {
+      console.warn('[Call] Screen share toggle failed:', error);
+      Alert.alert(
+        'Screen share failed',
+        error instanceof Error ? error.message : 'Could not start screen sharing. Please try again.'
+      );
+    }
+  }, []);
 
   return {
     ...callStore,
@@ -571,5 +633,6 @@ export function useCall() {
     toggleCamera,
     cycleAudioOutput,
     flipCamera,
+    toggleScreenShare,
   };
 }
