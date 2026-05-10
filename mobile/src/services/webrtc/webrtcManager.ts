@@ -57,8 +57,6 @@ type ProcessedAudioConstraints = {
   volume: number;
 };
 
-const MICROPHONE_GAIN = 1.25;
-
 class WebRTCManager {
   private peerConnection: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
@@ -235,7 +233,6 @@ class WebRTCManager {
     this.cameraStream = await mediaDevices.getUserMedia(
       constraints as unknown as Parameters<typeof mediaDevices.getUserMedia>[0]
     );
-    this.applyMicrophoneGain(this.cameraStream);
     this.localStream = this.cameraStream;
     console.log('[WebRTC] Local stream started:', {
       audioTracks: this.localStream.getAudioTracks().length,
@@ -437,8 +434,11 @@ class WebRTCManager {
       eventedScreenTrack.onended = handleScreenTrackEnded;
     }
 
-    const audioTracks = this.getMicrophoneTracks();
-    this.localStream = new MediaStream([...audioTracks, screenTrack]);
+    // Use the original screenStream (native stream object) for local preview.
+    // Creating a new MediaStream from extracted tracks produces a JS-only object
+    // whose toURL() is not registered with the native RTCView renderer, causing
+    // a blank preview. The screenStream from getDisplayMedia() is natively backed.
+    this.localStream = screenStream;
     this.emitLocalStream(this.localStream);
     this.emitLocalScreenShareChange(true);
 
@@ -545,16 +545,6 @@ class WebRTCManager {
     this.localStream?.getTracks().forEach((track) => tracks.set(track.id, track));
 
     return [...tracks.values()];
-  }
-
-  private applyMicrophoneGain(stream: MediaStream) {
-    stream.getAudioTracks().forEach((track) => {
-      try {
-        track._setVolume(MICROPHONE_GAIN);
-      } catch (error) {
-        console.warn('[WebRTC] Could not apply microphone gain:', error);
-      }
-    });
   }
 
   private scheduleAudioModeReset() {

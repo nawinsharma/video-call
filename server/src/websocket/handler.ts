@@ -43,6 +43,7 @@ async function cleanupStaleCalls() {
     if (now - call.createdAt <= ttl) continue;
 
     activeCalls.delete(callId);
+    updateCallBusyPresence(call);
     await db
       .update(schema.calls)
       .set({
@@ -59,6 +60,21 @@ async function cleanupStaleCalls() {
       type: call.acceptedAt ? 'call:ended' : 'call:missed',
       payload: { callId, reason: 'timeout' },
     }, { queueIfOffline: true });
+  }
+}
+
+function isUserInTrackedCall(userId: string) {
+  for (const call of activeCalls.values()) {
+    if (call.callerId === userId || call.calleeId === userId) return true;
+  }
+  return false;
+}
+
+function updateCallBusyPresence(call: { callerId: string; calleeId: string }) {
+  for (const userId of [call.callerId, call.calleeId]) {
+    const isBusy = isUserInTrackedCall(userId);
+    connectionManager.setBusy(userId, isBusy);
+    connectionManager.broadcast({ type: 'user:busy', payload: { userId, isBusy } }, userId);
   }
 }
 
@@ -121,6 +137,9 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
     }
 
     connectionManager.add(userId, username, ws);
+    if (isUserInTrackedCall(userId)) {
+      connectionManager.setBusy(userId, true);
+    }
 
     connectionManager.broadcast({ type: 'user:online', payload: { userId, username } }, userId);
 
@@ -160,11 +179,24 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
         break;
       }
 
+      case 'user:app-state': {
+        const { appState } = payload as unknown as { appState?: 'active' | 'background' };
+        if (appState === 'active' || appState === 'background') {
+          connectionManager.setAppState(userId, appState);
+        }
+        break;
+      }
+
       case 'call:initiate': {
         const { calleeId, callType, offer } = payload as unknown as CallInitiatePayload;
 
         if (!calleeId || calleeId === userId || !callType || !offer) {
           ws.send(JSON.stringify({ type: 'error', payload: { message: 'Invalid call initiate payload' } }));
+          return;
+        }
+
+        if (isUserInTrackedCall(userId) || isUserInTrackedCall(calleeId)) {
+          ws.send(JSON.stringify({ type: 'call:rejected', payload: { reason: 'busy' } }));
           return;
         }
 
@@ -185,14 +217,15 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
         }
 
         activeCalls.set(call.id, { callerId: userId, calleeId, callType, offer, createdAt: Date.now() });
+        updateCallBusyPresence(activeCalls.get(call.id)!);
 
         const callerIceServers = await getICEServers(userId);
 
         // Notify callee via WebSocket
         const sent = await deliverIncomingCall(call.id);
 
-        // If callee is offline, send push notification
-        if (!sent) {
+        const shouldSendPush = !sent || connectionManager.getAppState(calleeId) !== 'active';
+        if (shouldSendPush) {
           const callee = await db.query.users.findFirst({
             where: eq(schema.users.id, calleeId),
           });
@@ -249,6 +282,7 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
           .where(eq(schema.calls.id, callId));
 
         activeCalls.delete(callId);
+        updateCallBusyPresence(call);
 
         const targetId = getPeerUserId(userId, call);
         if (!targetId) return;
@@ -272,6 +306,7 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
           .where(eq(schema.calls.id, callId));
 
         activeCalls.delete(callId);
+        updateCallBusyPresence(call);
 
         connectionManager.sendTo(call.callerId, {
           type: 'call:rejected',
@@ -300,6 +335,7 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
           .where(eq(schema.calls.id, callId));
 
         activeCalls.delete(callId);
+        updateCallBusyPresence(call);
 
         const otherUserId = getPeerUserId(userId, call);
         if (!otherUserId) return;

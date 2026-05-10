@@ -50,14 +50,30 @@ function addMainActivityPip(contents) {
 }
 
 function addMainApplicationPackage(contents) {
-  if (contents.includes('VideoCallPipPackage')) {
-    return contents;
+  let next = contents;
+
+  if (!next.includes('import com.oney.WebRTCModule.WebRTCModuleOptions')) {
+    next = next.replace(
+      /package [^\n]+\n/,
+      (match) => `${match}\nimport com.oney.WebRTCModule.WebRTCModuleOptions\n`
+    );
   }
 
-  return contents.replace(
-    /val packages = PackageList\(this\)\.packages\n/,
-    'val packages = PackageList(this).packages\n      packages.add(VideoCallPipPackage())\n'
-  );
+  if (!next.includes('VideoCallPipPackage')) {
+    next = next.replace(
+      /val packages = PackageList\(this\)\.packages\n/,
+      'val packages = PackageList(this).packages\n      packages.add(VideoCallPipPackage())\n'
+    );
+  }
+
+  if (!next.includes('enableMediaProjectionService = true')) {
+    next = next.replace(
+      /super\.onCreate\(\)\n/,
+      'super.onCreate()\n    WebRTCModuleOptions.getInstance().enableMediaProjectionService = true\n'
+    );
+  }
+
+  return next;
 }
 
 function writeNativeModule(projectRoot, androidPackage) {
@@ -81,13 +97,18 @@ function writeNativeModule(projectRoot, androidPackage) {
 
 import android.app.Activity;
 import android.app.PictureInPictureParams;
+import android.content.Context;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
 import android.os.Build;
 import android.util.Rational;
 
+import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
+import com.facebook.react.bridge.WritableArray;
 
 public class ${MODULE_NAME}Module extends ReactContextBaseJavaModule {
   private static final Rational VIDEO_CALL_ASPECT_RATIO = new Rational(9, 16);
@@ -113,6 +134,37 @@ public class ${MODULE_NAME}Module extends ReactContextBaseJavaModule {
   public void enterPictureInPicture(Promise promise) {
     Activity activity = getCurrentActivity();
     promise.resolve(enterPictureInPicture(activity));
+  }
+
+  @ReactMethod
+  public void getAvailableAudioOutputs(Promise promise) {
+    WritableArray outputs = Arguments.createArray();
+    outputs.pushString("earpiece");
+    outputs.pushString("speaker");
+
+    AudioManager audioManager = (AudioManager) getReactApplicationContext().getSystemService(Context.AUDIO_SERVICE);
+    boolean hasBluetooth = false;
+
+    if (audioManager != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+      AudioDeviceInfo[] devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+      for (AudioDeviceInfo device : devices) {
+        int type = device.getType();
+        if (
+          type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+          type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+          (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && type == AudioDeviceInfo.TYPE_BLE_HEADSET)
+        ) {
+          hasBluetooth = true;
+          break;
+        }
+      }
+    }
+
+    if (hasBluetooth) {
+      outputs.pushString("bluetooth");
+    }
+
+    promise.resolve(outputs);
   }
 
   public static boolean shouldEnterPictureInPicture(Activity activity) {

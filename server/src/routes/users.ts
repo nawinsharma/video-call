@@ -31,6 +31,7 @@ export const userRoutes = new Elysia({ prefix: '/users' })
       return contacts.map((u) => ({
         ...u,
         isOnline: connectionManager.isOnline(u.id),
+        isBusy: connectionManager.isBusy(u.id),
       }));
     },
     { detail: { ...userDetail, summary: 'List contacts', description: 'People you have saved as contacts.' } },
@@ -73,6 +74,7 @@ export const userRoutes = new Elysia({ prefix: '/users' })
         .map((u) => ({
           ...u,
           isOnline: connectionManager.isOnline(u.id),
+          isBusy: connectionManager.isBusy(u.id),
           isContact: contactIds.has(u.id),
         }));
     },
@@ -114,6 +116,7 @@ export const userRoutes = new Elysia({ prefix: '/users' })
         displayName: contact.displayName,
         avatarUrl: contact.avatarUrl,
         isOnline: connectionManager.isOnline(contact.id),
+        isBusy: connectionManager.isBusy(contact.id),
         lastSeen: contact.lastSeen,
         isContact: true,
       };

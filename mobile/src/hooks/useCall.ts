@@ -16,6 +16,8 @@ import { MediaStream } from 'react-native-webrtc';
 import type { ICEServer, RTCIceCandidateType } from '../types';
 import { ensureCallPermissions } from '../services/permissions/callPermissions';
 import { clearPendingCallNotification } from '../services/notifications/pushHandler';
+import { pictureInPicture } from '../services/native/pictureInPicture';
+import { getAvailableAudioOutputs } from '../services/native/callNative';
 
 let callTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
 let durationInterval: ReturnType<typeof setInterval> | null = null;
@@ -69,6 +71,7 @@ function clearIceRestartTimer() {
 }
 
 function cleanupCallState() {
+  pictureInPicture.setCallActive(false);
   clearCallTimeout();
   clearConnectionFailureTimer();
   clearConnectionSetupTimer();
@@ -379,6 +382,12 @@ export function useCall() {
           useCallStore.getState().setStatus('active');
           void webrtcManager.setAudioOutput(useCallStore.getState().audioOutput);
           startDurationTimer();
+          // Tell the native layer a call is active so Android enters PiP when home is pressed.
+          pictureInPicture.setCallActive(true);
+          // Populate available audio outputs (needed to correctly hide Bluetooth when not paired).
+          void getAvailableAudioOutputs().then((outputs) => {
+            useCallStore.getState().setAvailableAudioOutputs(outputs);
+          });
         }
         if (state === 'disconnected') {
           const { status } = useCallStore.getState();
@@ -585,10 +594,16 @@ export function useCall() {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [callStore]);
 
-  const cycleAudioOutput = useCallback(() => {
-    callStore.cycleAudioOutput();
-    const nextOutput = useCallStore.getState().audioOutput;
-    void webrtcManager.setAudioOutput(nextOutput);
+  const cycleAudioOutput = useCallback(async () => {
+    // Query the currently connected audio devices so we never show Bluetooth
+    // as an option when no Bluetooth device is actually paired/connected.
+    const available = await getAvailableAudioOutputs();
+    const current = useCallStore.getState().audioOutput;
+    const idx = available.indexOf(current);
+    const nextIdx = idx === -1 ? 0 : (idx + 1) % available.length;
+    const next = available[nextIdx]!;
+    callStore.setAudioOutput(next);
+    void webrtcManager.setAudioOutput(next);
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [callStore]);
 
@@ -631,7 +646,7 @@ export function useCall() {
     endCall,
     toggleMute,
     toggleCamera,
-    cycleAudioOutput,
+    cycleAudioOutput: () => { void cycleAudioOutput(); },
     flipCamera,
     toggleScreenShare,
   };

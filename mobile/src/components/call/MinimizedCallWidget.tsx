@@ -47,7 +47,6 @@ export function MinimizedCallWidget() {
   const translateY = useSharedValue(minY);
   const startX = useSharedValue(maxX);
   const startY = useSharedValue(minY);
-  const scale = useSharedValue(1);
 
   const canShowRemoteVideo = isVideoCall && Boolean(remoteStream) && callStore.remoteVideoEnabled;
   const canShowLocalVideo =
@@ -65,7 +64,6 @@ export function MinimizedCallWidget() {
     .onStart(() => {
       startX.value = translateX.value;
       startY.value = translateY.value;
-      scale.value = withSpring(1.04, { damping: 18 });
     })
     .onUpdate((event) => {
       translateX.value = clamp(startX.value + event.translationX, minX, maxX);
@@ -75,17 +73,13 @@ export function MinimizedCallWidget() {
       const snapX = translateX.value < width / 2 - widgetWidth / 2 ? minX : maxX;
       translateX.value = withSpring(snapX, { damping: 20 });
       translateY.value = withSpring(clamp(translateY.value, minY, maxY), { damping: 20 });
-      scale.value = withSpring(1, { damping: 18 });
     });
 
   const animatedStyle = useAnimatedStyle(() => ({
+    left: translateX.value,
+    top: translateY.value,
     width: widgetWidth,
     height: widgetHeight,
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-      { scale: scale.value },
-    ],
   }));
 
   const handleMaximize = () => {
@@ -113,7 +107,7 @@ export function MinimizedCallWidget() {
                 style={styles.video}
                 objectFit={isScreenSharing ? 'contain' : 'cover'}
                 mirror={isShowingLocal && callStore.isFrontCamera && !isScreenSharing}
-                zOrder={2}
+                zOrder={0}
                 iosPIP={{
                   enabled: true,
                   startAutomatically: true,
@@ -237,8 +231,6 @@ function createStyles(theme: AppTheme) {
   return StyleSheet.create({
     container: {
       position: 'absolute',
-      top: 0,
-      left: 0,
       zIndex: 999,
       borderRadius: 20,
       shadowColor: '#000',

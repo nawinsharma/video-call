@@ -5,6 +5,7 @@ export interface User {
   displayName: string;
   avatarUrl?: string;
   isOnline?: boolean;
+  isBusy?: boolean;
   lastSeen?: string;
   isContact?: boolean;
 }
@@ -54,8 +55,10 @@ export type WSEventType =
   | 'webrtc:renegotiate'
   | 'connection:ping'
   | 'connection:pong'
+  | 'user:app-state'
   | 'user:online'
   | 'user:offline'
+  | 'user:busy'
   | 'call:incoming'
   | 'call:accepted'
   | 'call:rejected'

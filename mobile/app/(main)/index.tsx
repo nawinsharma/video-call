@@ -84,13 +84,16 @@ export default function HomeScreen() {
 
   const renderUser = ({ item, index }: { item: User; index: number }) => {
     const canCall = !isSearching || item.isContact;
+    const isBusy = Boolean(item.isBusy);
 
     return (
       <Animated.View entering={FadeInDown.delay(index * 35).springify()}>
         <View style={styles.userCard}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{item.displayName.charAt(0).toUpperCase()}</Text>
-            {item.isOnline && <View style={styles.onlineIndicator} />}
+            {(item.isOnline || isBusy) && (
+              <View style={[styles.presenceIndicator, isBusy ? styles.busyIndicator : styles.onlineIndicator]} />
+            )}
           </View>
 
           <View style={styles.userInfo}>
@@ -104,14 +107,16 @@ export default function HomeScreen() {
             <View style={styles.callButtons}>
               <IconButton
                 icon="call"
-                color={theme.colors.success}
+                color={isBusy ? theme.colors.subtle : theme.colors.success}
                 onPress={() => handleCall(item, 'audio')}
+                disabled={isBusy}
                 styles={styles}
               />
               <IconButton
                 icon="videocam"
-                color={theme.colors.accent}
+                color={isBusy ? theme.colors.subtle : theme.colors.accent}
                 onPress={() => handleCall(item, 'video')}
+                disabled={isBusy}
                 styles={styles}
               />
             </View>
@@ -201,15 +206,27 @@ function IconButton({
   icon,
   color,
   onPress,
+  disabled,
   styles,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   color: string;
   onPress: () => void;
+  disabled?: boolean;
   styles: ReturnType<typeof createStyles>;
 }) {
   return (
-    <Pressable style={({ pressed }) => [styles.callButton, pressed ? styles.pressed : null]} onPress={onPress}>
+    <Pressable
+      style={({ pressed }) => [
+        styles.callButton,
+        disabled ? styles.disabledButton : null,
+        pressed ? styles.pressed : null,
+      ]}
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+    >
       <Ionicons name={icon} size={20} color={color} />
     </Pressable>
   );
@@ -286,17 +303,18 @@ function createStyles(theme: AppTheme) {
       borderColor: theme.colors.accent,
     },
     avatarText: { fontSize: 20, fontWeight: '800', color: theme.colors.accent },
-    onlineIndicator: {
+    presenceIndicator: {
       position: 'absolute',
       bottom: 2,
       right: 2,
       width: 13,
       height: 13,
       borderRadius: 7,
-      backgroundColor: theme.colors.success,
       borderWidth: 2,
       borderColor: theme.colors.surface,
     },
+    onlineIndicator: { backgroundColor: theme.colors.success },
+    busyIndicator: { backgroundColor: theme.colors.danger },
     userInfo: { flex: 1, minWidth: 0 },
     userName: { fontSize: 17, fontWeight: '800', color: theme.colors.text },
     userStatus: { fontSize: 13, color: theme.colors.muted, marginTop: 3 },
@@ -321,6 +339,7 @@ function createStyles(theme: AppTheme) {
       marginLeft: 8,
     },
     pressed: { opacity: 0.72 },
+    disabledButton: { opacity: 0.55 },
     empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 12 },
     emptyText: { color: theme.colors.muted, fontSize: 15, textAlign: 'center', lineHeight: 22 },
   });

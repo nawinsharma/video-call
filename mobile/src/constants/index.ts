@@ -12,6 +12,7 @@ export const DEFAULT_ICE_SERVERS = [
 export const WS_EVENTS = {
   CONNECTION_PING: 'connection:ping',
   CONNECTION_PONG: 'connection:pong',
+  USER_APP_STATE: 'user:app-state',
   CALL_INITIATE: 'call:initiate',
   CALL_ACCEPT: 'call:accept',
   CALL_REJECT: 'call:reject',
@@ -27,6 +28,7 @@ export const WS_EVENTS = {
   WEBRTC_RENEGOTIATE: 'webrtc:renegotiate',
   USER_ONLINE: 'user:online',
   USER_OFFLINE: 'user:offline',
+  USER_BUSY: 'user:busy',
   MEDIA_TOGGLE_AUDIO: 'media:toggle-audio',
   MEDIA_TOGGLE_VIDEO: 'media:toggle-video',
   MEDIA_SCREEN_SHARE: 'media:screen-share',

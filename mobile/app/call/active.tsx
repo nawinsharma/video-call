@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, BackHandler } from 'react-native';
+import { Platform, View, Text, StyleSheet, Pressable, BackHandler } from 'react-native';
 import { router } from 'expo-router';
 import Animated, {
   FadeIn,
@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCallStore } from '../../src/stores/callStore';
 import { useCall } from '../../src/hooks/useCall';
+import { pictureInPicture } from '../../src/services/native/pictureInPicture';
 import { CallControls } from '../../src/components/call/CallControls';
 import { CallTimer } from '../../src/components/call/CallTimer';
 import { ActiveSpeakerGlow } from '../../src/components/call/ActiveSpeakerGlow';
@@ -60,7 +61,7 @@ export default function ActiveCallScreen() {
   // Intercept hardware back button — minimize instead of ending the call.
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      handleMinimize();
+      void handleMinimize();
       return true;
     });
     return () => sub.remove();
@@ -94,7 +95,18 @@ export default function ActiveCallScreen() {
     handleScreenTap();
   };
 
-  const handleMinimize = () => {
+  const handleMinimize = async () => {
+    // On Android, try to enter native Picture-in-Picture first.
+    // This keeps a floating video window visible even when switching to other apps,
+    // matching the WhatsApp behaviour.
+    if (Platform.OS === 'android') {
+      const entered = await pictureInPicture.enterPictureInPicture();
+      if (entered) {
+        // The activity is now in PiP — stay on the call screen (it becomes the PiP content).
+        return;
+      }
+    }
+    // Fallback (iOS, or Android PiP unavailable): in-app floating overlay.
     callStore.minimize();
     router.replace('/(main)');
   };
@@ -191,7 +203,7 @@ export default function ActiveCallScreen() {
         <Pressable
           onPress={(event) => {
             event.stopPropagation();
-            handleMinimize();
+            void handleMinimize();
           }}
           style={({ pressed }) => [styles.minimizeButton, pressed ? styles.controlPressed : null]}
           accessibilityRole="button"

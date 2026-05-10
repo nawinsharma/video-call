@@ -6,6 +6,7 @@ interface ConnectedClient {
   ws: {
     send: (data: string) => void;
   };
+  appState: 'active' | 'background';
 }
 
 interface QueuedMessage {
@@ -19,6 +20,7 @@ const MAX_PENDING_MESSAGES_PER_USER = 100;
 class ConnectionManager {
   private connections = new Map<string, ConnectedClient>();
   private pendingMessages = new Map<string, QueuedMessage[]>();
+  private busyUsers = new Set<string>();
 
   add(
     userId: string,
@@ -27,7 +29,7 @@ class ConnectionManager {
       send: (data: string) => void;
     }
   ) {
-    this.connections.set(userId, { userId, username, ws });
+    this.connections.set(userId, { userId, username, ws, appState: 'active' });
     this.flushPending(userId);
   }
 
@@ -51,6 +53,29 @@ class ConnectionManager {
 
   isOnline(userId: string): boolean {
     return this.connections.has(userId);
+  }
+
+  isBusy(userId: string): boolean {
+    return this.busyUsers.has(userId);
+  }
+
+  setBusy(userId: string, busy: boolean) {
+    if (busy) {
+      this.busyUsers.add(userId);
+      return;
+    }
+
+    this.busyUsers.delete(userId);
+  }
+
+  setAppState(userId: string, appState: 'active' | 'background') {
+    const client = this.connections.get(userId);
+    if (!client) return;
+    client.appState = appState;
+  }
+
+  getAppState(userId: string): 'active' | 'background' | 'offline' {
+    return this.connections.get(userId)?.appState ?? 'offline';
   }
 
   sendTo(userId: string, message: SocketMessage, options: { queueIfOffline?: boolean } = {}): boolean {
