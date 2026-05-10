@@ -15,6 +15,7 @@ import { Alert } from 'react-native';
 import { MediaStream } from 'react-native-webrtc';
 import type { ICEServer, RTCIceCandidateType } from '../types';
 import { ensureCallPermissions } from '../services/permissions/callPermissions';
+import { clearPendingCallNotification } from '../services/notifications/pushHandler';
 
 let callTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
 let durationInterval: ReturnType<typeof setInterval> | null = null;
@@ -179,6 +180,7 @@ export function useCallEvents() {
           return;
         }
 
+        clearPendingCallNotification();
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         useCallStore.getState().receiveCall({ callId, callerId, callerName, callType, offer, iceServers });
       })
@@ -339,7 +341,7 @@ export function useCall() {
           clearIceRestartTimer();
           iceRestartAttempts = 0;
           useCallStore.getState().setStatus('active');
-          void webrtcManager.setSpeakerOn(useCallStore.getState().isSpeakerOn);
+          void webrtcManager.setAudioOutput(useCallStore.getState().audioOutput);
           startDurationTimer();
         }
         if (state === 'disconnected') {
@@ -499,6 +501,7 @@ export function useCall() {
 
   const rejectCall = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    clearPendingCallNotification();
     if (callStore.callId) {
       signalingClient.send('call:reject', { callId: callStore.callId }, { queueIfDisconnected: true });
     }
@@ -541,10 +544,10 @@ export function useCall() {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [callStore]);
 
-  const toggleSpeaker = useCallback(() => {
-    const nextSpeakerOn = !useCallStore.getState().isSpeakerOn;
-    callStore.toggleSpeaker();
-    void webrtcManager.setSpeakerOn(nextSpeakerOn);
+  const cycleAudioOutput = useCallback(() => {
+    callStore.cycleAudioOutput();
+    const nextOutput = useCallStore.getState().audioOutput;
+    void webrtcManager.setAudioOutput(nextOutput);
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [callStore]);
 
@@ -566,7 +569,7 @@ export function useCall() {
     endCall,
     toggleMute,
     toggleCamera,
-    toggleSpeaker,
+    cycleAudioOutput,
     flipCamera,
   };
 }
