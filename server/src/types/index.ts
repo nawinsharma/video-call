@@ -29,6 +29,7 @@ export type WSEventType =
   | 'call:missed'
   | 'media:toggle-audio'
   | 'media:toggle-video'
+  | 'media:screen-share'
   | 'error';
 
 export interface CallInitiatePayload {

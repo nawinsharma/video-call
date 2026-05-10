@@ -22,6 +22,8 @@ export interface CallState {
   isCameraOff: boolean;
   isSpeakerOn: boolean;
   isFrontCamera: boolean;
+  isScreenSharing: boolean;
+  remoteScreenSharing: boolean;
   remoteAudioEnabled: boolean;
   remoteVideoEnabled: boolean;
 }
@@ -61,6 +63,7 @@ export type WSEventType =
   | 'call:missed'
   | 'media:toggle-audio'
   | 'media:toggle-video'
+  | 'media:screen-share'
   | 'error'
   | 'connection:open'
   | 'connection:close'
