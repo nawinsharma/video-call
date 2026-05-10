@@ -12,6 +12,10 @@ import { signalingClient } from '../websocket/signalingClient';
 import type { ICEServer, RTCIceCandidateType, RTCSessionDescriptionType } from '../../types';
 
 type CameraSwitchableTrack = MediaStreamTrack & { _switchCamera?: () => void };
+type EventedMediaStreamTrack = MediaStreamTrack & {
+  addEventListener?: (type: 'ended', listener: () => void) => void;
+  onended?: (() => void) | null;
+};
 
 interface IceCandidateEvent {
   candidate: RTCIceCandidateType | null;
@@ -36,12 +40,31 @@ interface WebRTCCallbacks {
   onRemoteStream?: (stream: MediaStream | null) => void;
   onLocalStream?: (stream: MediaStream | null) => void;
   onConnectionStateChange?: (state: string) => void;
+  onLocalScreenShareChange?: (enabled: boolean) => void;
 }
+
+type AudioOutputRoute = 'earpiece' | 'speaker' | 'bluetooth';
+
+type ProcessedAudioConstraints = {
+  echoCancellation: boolean;
+  noiseSuppression: boolean;
+  autoGainControl: boolean;
+  googEchoCancellation: boolean;
+  googNoiseSuppression: boolean;
+  googAutoGainControl: boolean;
+  googHighpassFilter: boolean;
+  googTypingNoiseDetection: boolean;
+  volume: number;
+};
+
+const MICROPHONE_GAIN = 1.25;
 
 class WebRTCManager {
   private peerConnection: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
+  private cameraStream: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
+  private screenStream: MediaStream | null = null;
   private pendingRemoteCandidates: RTCIceCandidate[] = [];
   /** Trickled ICE from caller before server assigns real call id (temp_* is not in activeCalls). */
   private pendingLocalIceCandidates: Array<{
@@ -53,7 +76,10 @@ class WebRTCManager {
   private callbacks = new Map<number, WebRTCCallbacks>();
   private nextCallbackId = 1;
   private isSpeakerOn = true;
+  private audioOutput: AudioOutputRoute = 'speaker';
   private audioModeGeneration = 0;
+  private isScreenSharing = false;
+  private isStoppingScreenShare = false;
 
   constructor() {
     signalingClient.on('connection:open', () => {
@@ -171,11 +197,7 @@ class WebRTCManager {
     const constraints: {
       audio:
         | boolean
-        | {
-            echoCancellation: boolean;
-            noiseSuppression: boolean;
-            autoGainControl: boolean;
-          };
+        | ProcessedAudioConstraints;
       video:
         | boolean
         | {
@@ -189,6 +211,12 @@ class WebRTCManager {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
+        googEchoCancellation: true,
+        googNoiseSuppression: true,
+        googAutoGainControl: true,
+        googHighpassFilter: true,
+        googTypingNoiseDetection: true,
+        volume: 1,
       },
       video: isVideo
         ? {
@@ -202,9 +230,13 @@ class WebRTCManager {
 
     // RN WebRTC's TypeScript type omits standard audio processing constraints
     // that the native WebRTC layer accepts for echo control.
-    this.localStream = await mediaDevices.getUserMedia(
+    await this.applyAudioOutput(this.audioOutput);
+
+    this.cameraStream = await mediaDevices.getUserMedia(
       constraints as unknown as Parameters<typeof mediaDevices.getUserMedia>[0]
     );
+    this.applyMicrophoneGain(this.cameraStream);
+    this.localStream = this.cameraStream;
     console.log('[WebRTC] Local stream started:', {
       audioTracks: this.localStream.getAudioTracks().length,
       videoTracks: this.localStream.getVideoTracks().length,
@@ -314,28 +346,30 @@ class WebRTCManager {
   }
 
   toggleAudio(enabled: boolean) {
-    this.localStream?.getAudioTracks().forEach((track: MediaStreamTrack) => {
+    this.getMicrophoneTracks().forEach((track: MediaStreamTrack) => {
       track.enabled = enabled;
     });
   }
 
   toggleVideo(enabled: boolean) {
-    this.localStream?.getVideoTracks().forEach((track: MediaStreamTrack) => {
+    this.cameraStream?.getVideoTracks().forEach((track: MediaStreamTrack) => {
       track.enabled = enabled;
     });
   }
 
   async setSpeakerOn(enabled: boolean) {
     this.isSpeakerOn = enabled;
+    this.audioOutput = enabled ? 'speaker' : 'earpiece';
     await this.applyAudioOutput(enabled ? 'speaker' : 'earpiece');
   }
 
-  async setAudioOutput(output: 'earpiece' | 'speaker' | 'bluetooth') {
+  async setAudioOutput(output: AudioOutputRoute) {
     this.isSpeakerOn = output !== 'earpiece';
+    this.audioOutput = output;
     await this.applyAudioOutput(output);
   }
 
-  private async applyAudioOutput(output: 'earpiece' | 'speaker' | 'bluetooth') {
+  private async applyAudioOutput(output: AudioOutputRoute) {
     // For 'bluetooth' and 'speaker', we do NOT force earpiece (letting the system
     // route to the best available output — Bluetooth if connected, speaker otherwise).
     // For 'earpiece', we force the earpiece route.
@@ -351,24 +385,112 @@ class WebRTCManager {
   }
 
   async switchCamera(): Promise<boolean> {
-    const videoTrack = this.localStream?.getVideoTracks()[0] as CameraSwitchableTrack | undefined;
+    if (this.isScreenSharing) return false;
+
+    const videoTrack = this.cameraStream?.getVideoTracks()[0] as CameraSwitchableTrack | undefined;
     if (!videoTrack?._switchCamera) return false;
 
     videoTrack._switchCamera();
     return true;
   }
 
+  async startScreenShare(): Promise<MediaStream> {
+    if (!this.peerConnection) {
+      throw new Error('Peer connection is not initialized');
+    }
+
+    if (this.isScreenSharing && this.localStream) {
+      return this.localStream;
+    }
+
+    const screenStream = await mediaDevices.getDisplayMedia();
+    const screenTrack = screenStream.getVideoTracks()[0];
+
+    if (!screenTrack) {
+      screenStream.getTracks().forEach((track: MediaStreamTrack) => track.stop());
+      throw new Error('Screen sharing did not provide a video track');
+    }
+
+    try {
+      const videoSender = this.getVideoSender();
+      if (videoSender) {
+        await videoSender.replaceTrack(screenTrack);
+      } else {
+        this.peerConnection.addTrack(screenTrack, screenStream);
+      }
+    } catch (error) {
+      screenStream.getTracks().forEach((track: MediaStreamTrack) => track.stop());
+      throw error;
+    }
+
+    this.screenStream = screenStream;
+    this.isScreenSharing = true;
+
+    const eventedScreenTrack = screenTrack as EventedMediaStreamTrack;
+    const handleScreenTrackEnded = () => {
+      if (this.isStoppingScreenShare) return;
+      void this.stopScreenShare();
+    };
+    if (eventedScreenTrack.addEventListener) {
+      eventedScreenTrack.addEventListener('ended', handleScreenTrackEnded);
+    } else {
+      eventedScreenTrack.onended = handleScreenTrackEnded;
+    }
+
+    const audioTracks = this.getMicrophoneTracks();
+    this.localStream = new MediaStream([...audioTracks, screenTrack]);
+    this.emitLocalStream(this.localStream);
+    this.emitLocalScreenShareChange(true);
+
+    return this.localStream;
+  }
+
+  async stopScreenShare(restoreCameraVideo = true): Promise<void> {
+    if (!this.isScreenSharing && !this.screenStream) return;
+
+    this.isStoppingScreenShare = true;
+    const cameraTrack = this.cameraStream?.getVideoTracks()[0] ?? null;
+
+    try {
+      const videoSender = this.getVideoSender();
+      if (videoSender) {
+        await videoSender.replaceTrack(cameraTrack);
+      }
+
+      if (cameraTrack) {
+        cameraTrack.enabled = restoreCameraVideo;
+      }
+    } finally {
+      this.screenStream?.getTracks().forEach((track: MediaStreamTrack) => {
+        if (track.readyState !== 'ended') {
+          track.stop();
+        }
+      });
+      this.screenStream = null;
+      this.localStream = this.cameraStream;
+      this.isScreenSharing = false;
+      this.isStoppingScreenShare = false;
+      this.emitLocalStream(this.localStream);
+      this.emitLocalScreenShareChange(false);
+    }
+  }
+
   cleanup() {
-    this.localStream?.getTracks().forEach((track: MediaStreamTrack) => track.stop());
+    this.getAllLocalTracks().forEach((track: MediaStreamTrack) => track.stop());
     this.peerConnection?.close();
     this.localStream = null;
+    this.cameraStream = null;
     this.remoteStream = null;
+    this.screenStream = null;
     this.peerConnection = null;
     this.pendingRemoteCandidates = [];
     this.pendingLocalIceCandidates = [];
     this.callId = null;
+    this.isScreenSharing = false;
+    this.isStoppingScreenShare = false;
     this.emitLocalStream(null);
     this.emitRemoteStream(null);
+    this.emitLocalScreenShareChange(false);
     this.scheduleAudioModeReset();
   }
 
@@ -398,6 +520,41 @@ class WebRTCManager {
     }
 
     return this.remoteStream;
+  }
+
+  private getVideoSender() {
+    return this.peerConnection
+      ?.getSenders()
+      .find((sender) => sender.track?.kind === 'video');
+  }
+
+  private getMicrophoneTracks() {
+    const tracks = new Map<string, MediaStreamTrack>();
+
+    this.cameraStream?.getAudioTracks().forEach((track) => tracks.set(track.id, track));
+    this.localStream?.getAudioTracks().forEach((track) => tracks.set(track.id, track));
+
+    return [...tracks.values()];
+  }
+
+  private getAllLocalTracks() {
+    const tracks = new Map<string, MediaStreamTrack>();
+
+    this.cameraStream?.getTracks().forEach((track) => tracks.set(track.id, track));
+    this.screenStream?.getTracks().forEach((track) => tracks.set(track.id, track));
+    this.localStream?.getTracks().forEach((track) => tracks.set(track.id, track));
+
+    return [...tracks.values()];
+  }
+
+  private applyMicrophoneGain(stream: MediaStream) {
+    stream.getAudioTracks().forEach((track) => {
+      try {
+        track._setVolume(MICROPHONE_GAIN);
+      } catch (error) {
+        console.warn('[WebRTC] Could not apply microphone gain:', error);
+      }
+    });
   }
 
   private scheduleAudioModeReset() {
@@ -475,6 +632,10 @@ class WebRTCManager {
 
   private emitConnectionState(state: string) {
     this.callbacks.forEach((callbacks) => callbacks.onConnectionStateChange?.(state));
+  }
+
+  private emitLocalScreenShareChange(enabled: boolean) {
+    this.callbacks.forEach((callbacks) => callbacks.onLocalScreenShareChange?.(enabled));
   }
 }
 
