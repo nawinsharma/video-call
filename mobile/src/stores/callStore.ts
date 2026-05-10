@@ -1,25 +1,32 @@
 import { create } from 'zustand';
 import type { CallState, CallStatus, ICEServer, RTCSessionDescriptionType } from '../types';
 
+export type AudioOutput = 'earpiece' | 'speaker' | 'bluetooth';
+
 interface CallStore extends CallState {
   iceServers: ICEServer[];
+  audioOutput: AudioOutput;
+  isMinimized: boolean;
   startCall: (params: { callId: string; remoteUserId: string; remoteUsername: string; callType: 'audio' | 'video'; iceServers?: ICEServer[] }) => void;
   receiveCall: (params: { callId: string; callerId: string; callerName: string; callType: 'audio' | 'video'; offer?: RTCSessionDescriptionType; iceServers?: ICEServer[] }) => void;
   updateSession: (params: { callId?: string; iceServers?: ICEServer[]; remoteOffer?: RTCSessionDescriptionType | null }) => void;
   setStatus: (status: CallStatus) => void;
   toggleMute: () => void;
   toggleCamera: () => void;
-  toggleSpeaker: () => void;
+  cycleAudioOutput: () => void;
+  setAudioOutput: (output: AudioOutput) => void;
   flipCamera: () => void;
   setRemoteAudioEnabled: (enabled: boolean) => void;
   setRemoteVideoEnabled: (enabled: boolean) => void;
   updateDuration: (duration: number) => void;
   setIceServers: (servers: ICEServer[]) => void;
   endCall: () => void;
+  minimize: () => void;
+  maximize: () => void;
   reset: () => void;
 }
 
-const initialState: CallState & { iceServers: ICEServer[] } = {
+const initialState: CallState & { iceServers: ICEServer[]; audioOutput: AudioOutput; isMinimized: boolean } = {
   callId: null,
   remoteUserId: null,
   remoteUsername: null,
@@ -35,6 +42,8 @@ const initialState: CallState & { iceServers: ICEServer[] } = {
   remoteAudioEnabled: true,
   remoteVideoEnabled: true,
   iceServers: [],
+  audioOutput: 'earpiece',
+  isMinimized: false,
 };
 
 export const useCallStore = create<CallStore>((set) => ({
@@ -52,9 +61,11 @@ export const useCallStore = create<CallStore>((set) => ({
       isMuted: false,
       isCameraOff: false,
       isSpeakerOn: callType === 'video',
+      audioOutput: callType === 'video' ? 'speaker' : 'earpiece',
       isFrontCamera: true,
       remoteAudioEnabled: true,
       remoteVideoEnabled: true,
+      isMinimized: false,
       iceServers: iceServers || [],
     }),
 
@@ -70,9 +81,11 @@ export const useCallStore = create<CallStore>((set) => ({
       isMuted: false,
       isCameraOff: false,
       isSpeakerOn: callType === 'video',
+      audioOutput: callType === 'video' ? 'speaker' : 'earpiece',
       isFrontCamera: true,
       remoteAudioEnabled: true,
       remoteVideoEnabled: true,
+      isMinimized: false,
       iceServers: iceServers || [],
     }),
 
@@ -89,7 +102,15 @@ export const useCallStore = create<CallStore>((set) => ({
 
   toggleCamera: () => set((state) => ({ isCameraOff: !state.isCameraOff })),
 
-  toggleSpeaker: () => set((state) => ({ isSpeakerOn: !state.isSpeakerOn })),
+  cycleAudioOutput: () =>
+    set((state) => {
+      const order: AudioOutput[] = ['earpiece', 'speaker', 'bluetooth'];
+      const current = order.indexOf(state.audioOutput);
+      const next = order[(current + 1) % order.length];
+      return { audioOutput: next, isSpeakerOn: next !== 'earpiece' };
+    }),
+
+  setAudioOutput: (audioOutput) => set({ audioOutput, isSpeakerOn: audioOutput !== 'earpiece' }),
 
   flipCamera: () => set((state) => ({ isFrontCamera: !state.isFrontCamera })),
 
@@ -101,7 +122,11 @@ export const useCallStore = create<CallStore>((set) => ({
 
   setIceServers: (iceServers) => set({ iceServers }),
 
-  endCall: () => set({ status: 'ended' }),
+  endCall: () => set({ status: 'ended', isMinimized: false }),
+
+  minimize: () => set({ isMinimized: true }),
+
+  maximize: () => set({ isMinimized: false }),
 
   reset: () => set(initialState),
 }));
