@@ -16,6 +16,8 @@ interface CallStore extends CallState {
   cycleAudioOutput: () => void;
   setAudioOutput: (output: AudioOutput) => void;
   flipCamera: () => void;
+  setScreenSharing: (enabled: boolean) => void;
+  setRemoteScreenSharing: (enabled: boolean) => void;
   setRemoteAudioEnabled: (enabled: boolean) => void;
   setRemoteVideoEnabled: (enabled: boolean) => void;
   updateDuration: (duration: number) => void;
@@ -39,6 +41,8 @@ const initialState: CallState & { iceServers: ICEServer[]; audioOutput: AudioOut
   isCameraOff: false,
   isSpeakerOn: true,
   isFrontCamera: true,
+  isScreenSharing: false,
+  remoteScreenSharing: false,
   remoteAudioEnabled: true,
   remoteVideoEnabled: true,
   iceServers: [],
@@ -63,6 +67,8 @@ export const useCallStore = create<CallStore>((set) => ({
       isSpeakerOn: callType === 'video',
       audioOutput: callType === 'video' ? 'speaker' : 'earpiece',
       isFrontCamera: true,
+      isScreenSharing: false,
+      remoteScreenSharing: false,
       remoteAudioEnabled: true,
       remoteVideoEnabled: true,
       isMinimized: false,
@@ -83,6 +89,8 @@ export const useCallStore = create<CallStore>((set) => ({
       isSpeakerOn: callType === 'video',
       audioOutput: callType === 'video' ? 'speaker' : 'earpiece',
       isFrontCamera: true,
+      isScreenSharing: false,
+      remoteScreenSharing: false,
       remoteAudioEnabled: true,
       remoteVideoEnabled: true,
       isMinimized: false,
@@ -114,6 +122,10 @@ export const useCallStore = create<CallStore>((set) => ({
 
   flipCamera: () => set((state) => ({ isFrontCamera: !state.isFrontCamera })),
 
+  setScreenSharing: (isScreenSharing) => set({ isScreenSharing }),
+
+  setRemoteScreenSharing: (remoteScreenSharing) => set({ remoteScreenSharing }),
+
   setRemoteAudioEnabled: (remoteAudioEnabled) => set({ remoteAudioEnabled }),
 
   setRemoteVideoEnabled: (remoteVideoEnabled) => set({ remoteVideoEnabled }),
@@ -122,7 +134,13 @@ export const useCallStore = create<CallStore>((set) => ({
 
   setIceServers: (iceServers) => set({ iceServers }),
 
-  endCall: () => set({ status: 'ended', isMinimized: false }),
+  endCall: () =>
+    set({
+      status: 'ended',
+      isMinimized: false,
+      isScreenSharing: false,
+      remoteScreenSharing: false,
+    }),
 
   minimize: () => set({ isMinimized: true }),
 

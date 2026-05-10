@@ -380,7 +380,8 @@ export const websocketHandler = new Elysia({ prefix: '/ws' }).ws('/signaling', {
       }
 
       case 'media:toggle-audio':
-      case 'media:toggle-video': {
+      case 'media:toggle-video':
+      case 'media:screen-share': {
         const { callId, enabled } = payload as unknown as { callId: string; enabled: boolean };
         const call = activeCalls.get(callId);
         if (!call) return;
